@@ -85,7 +85,9 @@ jobs:
             $pair = $line -split '=', 2
             Set-Item -Path "Env:$($pair[0])" -Value $pair[1]
           }
-          [IO.File]::AppendAllLines($env:GITHUB_ENV, $envLines, [Text.UTF8Encoding]::new($false))
+          foreach ($line in $envLines) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value $line -Encoding utf8
+          }
           Write-Host "MSVC environment initialized from $devCmd"
 
       - name: Verify existing MSVC toolchain
@@ -94,6 +96,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'MSVC compiler is unavailable on windows-latest' }
           if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) { throw 'MSVC linker is unavailable on windows-latest' }
+          Write-Host 'MSVC compiler probe:'
+          cl.exe 2>&1 | Select-Object -First 5
           Write-Host 'MSVC compiler and linker are available'
 
       - name: Install isolated desktop dependencies

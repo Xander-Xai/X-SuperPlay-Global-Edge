@@ -78,6 +78,10 @@ jobs:
             client/mihomo/config.yaml.example
             client/wireguard/README.md
             client/wireguard/admin-split.conf.example
+            services/edge-health-api/runtime/__init__.py
+            services/edge-health-api/runtime/collector.py
+            services/edge-health-api/runtime/models.py
+            services/edge-health-api/runtime/state.py
             scripts/g1-v2-validate.sh
             scripts/g1-v2-server-state.sh
             scripts/g1-v2-failover.sh
@@ -98,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git ls-files | grep -E '(^|/)(\.env$|secrets/|clients/|runtime/|state/|backups/)|\.(key|pem|p12|pfx|conf)$'; then
+          if git ls-files | grep -E '(^|/)(\.env$|secrets/|clients/|state/|backups/)|^runtime/|\.(key|pem|p12|pfx|conf)$'; then
             echo "Tracked runtime/secret-shaped file detected."
             exit 1
           fi
@@ -209,6 +213,19 @@ jobs:
       - name: Secret-shape scan over tracked content
         shell: bash
         run: bash scripts/secret-scan.sh
+
+      - name: Verify API source package completeness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f services/edge-health-api/runtime/__init__.py
+          test -f services/edge-health-api/runtime/collector.py
+          test -f services/edge-health-api/runtime/models.py
+          test -f services/edge-health-api/runtime/state.py
+          (
+            cd services/edge-health-api
+            python -c "from runtime.collector import RuntimeStateCollector; print('PASS: runtime source package import')"
+          )
 
       - name: Python regression tests
         shell: bash

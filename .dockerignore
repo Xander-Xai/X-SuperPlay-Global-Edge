@@ -18,6 +18,8 @@ tools/edge-health-agent/config.example.yaml
 services/edge-health-api/README.md
 services/edge-health-api/config
 runtime
+!services/edge-health-api/runtime/
+!services/edge-health-api/runtime/**
 state
 backups
 secrets
