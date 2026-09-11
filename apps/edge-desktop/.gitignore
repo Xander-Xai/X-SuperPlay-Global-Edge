@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/*.png
+src-tauri/icons/*.icns
+src-tauri/icons/*Logo.png
+*.local
+.env.local

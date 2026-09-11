@@ -1,0 +1,184 @@
+name: observation-runtime
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "services/edge-health-api/**"
+      - "tools/edge-health-agent/**"
+      - "deploy/observation/**"
+      - ".github/workflows/observation-runtime-ci.yml"
+  pull_request:
+    paths:
+      - "services/edge-health-api/**"
+      - "tools/edge-health-agent/**"
+      - "deploy/observation/**"
+      - ".github/workflows/observation-runtime-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  observation-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r tools/edge-health-agent/requirements.txt
+
+      - name: Existing API and evidence tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s services/edge-health-api/tests -v
+          python -m unittest discover -s tools/edge-health-agent/tests -v
+
+      - name: Compose and Docker security contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          chmod 0755 "$tmpdir"
+          mkdir -p "$tmpdir/evidence"
+          chmod 0755 "$tmpdir/evidence"
+          cat >"$tmpdir/node.yaml" <<'YAML'
+          identity:
+            node_id: ci-fixture
+            region: test
+            provider: ci
+            version: test
+          capabilities:
+            wireguard: false
+            xray_reality: false
+            hysteria2: false
+          metadata:
+            runtime_version: test
+            api_version: v1
+          YAML
+          chmod 0644 "$tmpdir/node.yaml"
+          export EDGE_OBSERVATION_EVIDENCE_ROOT="$tmpdir/evidence"
+          export EDGE_OBSERVATION_IDENTITY_CONFIG="$tmpdir/node.yaml"
+          docker compose -f deploy/observation/docker-compose.yml config --format json >"$tmpdir/config.json"
+          python - "$tmpdir/config.json" <<'PY'
+          import json
+          import sys
+
+          config = json.load(open(sys.argv[1], encoding="utf-8"))
+          ports = config["services"]["edge-health-api"]["ports"]
+          assert len(ports) == 1, ports
+          port = ports[0]
+          assert port["target"] == 8080, port
+          assert str(port["published"]) == "8080", port
+          assert port["host_ip"] == "127.0.0.1", port
+          assert port.get("host_ip") not in ("", "0.0.0.0", "::"), port
+          print("OBSERVATION_LOOPBACK_PORT_CONTRACT=PASS")
+          PY
+
+      - name: Build, run, and exercise isolated loopback runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          cleanup() {
+            docker compose -f deploy/observation/docker-compose.yml down --volumes --remove-orphans >/dev/null 2>&1 || true
+            rm -rf "$tmpdir"
+          }
+          trap cleanup EXIT
+          mkdir -p "$tmpdir/evidence"
+          chmod 0755 "$tmpdir"
+          chmod 0755 "$tmpdir/evidence"
+          cat >"$tmpdir/node.yaml" <<'YAML'
+          identity:
+            node_id: ci-fixture
+            region: test
+            provider: ci
+            version: test
+          capabilities:
+            wireguard: false
+            xray_reality: false
+            hysteria2: false
+          metadata:
+            runtime_version: test
+            api_version: v1
+          YAML
+          chmod 0644 "$tmpdir/node.yaml"
+          export EDGE_OBSERVATION_EVIDENCE_ROOT="$tmpdir/evidence"
+          export EDGE_OBSERVATION_IDENTITY_CONFIG="$tmpdir/node.yaml"
+          docker compose -f deploy/observation/docker-compose.yml up -d --build
+          cid="$(docker compose -f deploy/observation/docker-compose.yml ps -q edge-health-api)"
+          test -n "$cid"
+          ready=0
+          for _ in $(seq 1 30); do
+            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
+            case "$status" in
+              healthy)
+                ready=1
+                break
+                ;;
+              unhealthy|exited|dead)
+                docker compose -f deploy/observation/docker-compose.yml logs --no-color edge-health-api
+                exit 1
+                ;;
+            esac
+            sleep 2
+          done
+          final_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")"
+          if [ "$ready" -ne 1 ] || [ "$final_status" != "healthy" ]; then
+            docker compose -f deploy/observation/docker-compose.yml logs --no-color edge-health-api
+            exit 1
+          fi
+          python - <<'PY'
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          base = "http://127.0.0.1:8080"
+          paths = [
+              "/api/v1/health/current",
+              "/api/v1/health/history",
+              "/api/v1/events",
+              "/api/v1/node/status",
+              "/api/v1/node/services",
+              "/api/v1/node/connection",
+              "/api/v1/node/identity",
+              "/api/v1/node/capabilities",
+              "/api/v1/node/metadata",
+              "/metrics",
+          ]
+          for path in paths:
+              with urlopen(base + path, timeout=5) as response:
+                  assert response.status == 200, (path, response.status)
+                  assert len(response.read()) <= 1_048_576
+          for method in ("POST", "PUT", "PATCH", "DELETE", "CONNECT"):
+              try:
+                  urlopen(Request(base + "/api/v1/node/status", method=method), timeout=5)
+              except HTTPError as error:
+                  assert error.code in (405, 501), (method, error.code)
+              else:
+                  raise AssertionError(f"{method} was accepted")
+          try:
+              urlopen(base + "/not-allowlisted", timeout=5)
+          except HTTPError as error:
+              assert error.code == 404, error.code
+          else:
+              raise AssertionError("unknown path was accepted")
+          print("PASS: 10 GET endpoints, write-method rejection, unknown path rejection")
+          PY
+          ports="$(docker inspect "$(docker compose -f deploy/observation/docker-compose.yml ps -q edge-health-api)" --format '{{json .HostConfig.PortBindings}}')"
+          echo "$ports"
+          test "$ports" = '{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]}'
+          docker inspect "$(docker compose -f deploy/observation/docker-compose.yml ps -q edge-health-api)" --format '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{json .HostConfig.CapDrop}} {{json .HostConfig.SecurityOpt}}'
+          docker inspect "$(docker compose -f deploy/observation/docker-compose.yml ps -q edge-health-api)" --format '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{json .HostConfig.CapDrop}} {{json .HostConfig.SecurityOpt}}' | grep -F '10001:10001 true ["ALL"] ["no-new-privileges:true"]'

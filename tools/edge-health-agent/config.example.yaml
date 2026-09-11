@@ -1,0 +1,38 @@
+# One-shot, read-only probe configuration.
+# Replace example values before running against a real endpoint.
+timeout_seconds: 3
+
+tcp:
+  host: example.com
+  port: 443
+
+http:
+  targets:
+    - name: gstatic
+      url: https://www.gstatic.com/generate_204
+      expected_status: [204]
+    - name: google
+      url: https://www.google.com/generate_204
+      expected_status: [204]
+    - name: github
+      url: https://github.com/
+      expected_status: [200]
+
+egress:
+  enabled: false
+  url: https://api.ipify.org?format=json
+  # Set the expected public IP to enable comparison.
+  expected_ip: ""
+  # Optional HTTP(S) proxy URL, e.g. http://127.0.0.1:7890
+  proxy: ""
+
+evidence:
+  root: evidence
+  max_days: 7
+
+alerts:
+  summary_path: evidence/summary.json
+  output_path: evidence/alert.json
+  success_rate_threshold: 99
+  p95_latency_threshold_ms: 3000
+  tcp_failure_threshold: 3

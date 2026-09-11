@@ -1,0 +1,18 @@
+# Configuration-backed node identity contract.
+# Replace these example values for a specific node; the API does not hardcode them.
+identity:
+  node_id: edge-current
+  region: unspecified
+  provider: unspecified
+  version: p12-007
+
+# Missing capability keys default to false. True is a declaration only;
+# runtime health still comes from the existing evidence pipeline.
+capabilities:
+  wireguard: false
+  xray_reality: false
+  hysteria2: false
+
+metadata:
+  runtime_version: edge-runtime-state-v1
+  api_version: v1

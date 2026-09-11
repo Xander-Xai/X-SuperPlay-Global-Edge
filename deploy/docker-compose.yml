@@ -1,0 +1,82 @@
+name: ${COMPOSE_PROJECT_NAME:-x-superplay-global-edge}
+
+volumes:
+  etc_wireguard:
+
+services:
+  wg-easy:
+    image: ${WGEASY_IMAGE:-ghcr.io/wg-easy/wg-easy:15.4.0@sha256:0e7bc9d34e86ddcaa92bc700d4d7dc9b33291dbc07ac8d13382f7c2095f949ec}
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # Web UI process port/bind inside the container (upstream v15 vars).
+      # HOST here is the wg-easy HTTP bind, NOT the public WireGuard endpoint.
+      PORT: "51821"
+      HOST: 0.0.0.0
+      # Plain HTTP is permitted only because the host-side admin port is
+      # loopback-bound by default. Do not expose it publicly without a
+      # separately reviewed TLS/private-access design.
+      INSECURE: "true"
+      # G1 is IPv4-first. Upstream semantics (v15 docs): disabling IPv6 stops
+      # creation of default IPv6 firewall rules and does not add an IPv6
+      # address to the interface or to clients. NOTE: wg-easy v15 does NOT
+      # read a WG_HOST env var; the client endpoint Host/Port live in its
+      # persistent state after onboarding (Web UI or INIT_* one-shot vars).
+      DISABLE_IPV6: "${EDGE_DISABLE_IPV6:-true}"
+      DISABLE_VERSION_CHECK: "${WGEASY_DISABLE_VERSION_CHECK:-false}"
+    networks:
+      wg:
+        ipv4_address: 10.42.42.42
+        ipv6_address: fdcc:ad94:bacf:61a3::2a
+    volumes:
+      - etc_wireguard:/etc/wireguard
+      - /lib/modules:/lib/modules:ro
+    ports:
+      # Host UDP publish for WireGuard. wg-easy v15 uses one port as both its
+      # listen port and the client endpoint port, so host and container values
+      # must match the port stored in persistent state after onboarding.
+      # EDGE_WIREGUARD_PORT is the repository-owned expectation; onboarding
+      # Port MUST equal it (scripts/wireguard-check.sh verifies after setup).
+      - "${EDGE_WIREGUARD_PORT:-51820}:${EDGE_WIREGUARD_PORT:-51820}/udp"
+      - "${WG_ADMIN_BIND:-127.0.0.1}:${WG_ADMIN_PORT:-51821}:51821/tcp"
+    restart: unless-stopped
+    stop_grace_period: 20s
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.default.forwarding=1
+    # P2 health is process/UI readiness, not tunnel acceptance. A fresh v15
+    # install can legitimately have no WireGuard interface until interactive
+    # setup is completed, so probing `wg show` here would create a false
+    # unhealthy state during onboarding. Tunnel health is verified later.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:51821/').then((response) =>
+          process.exit(response.status < 500 ? 0 : 1)).catch(() => process.exit(1))
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: local
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: "${LOG_MAX_FILE:-3}"
+
+networks:
+  wg:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.42.42.0/24
+        - subnet: fdcc:ad94:bacf:61a3::/64

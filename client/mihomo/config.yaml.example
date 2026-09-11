@@ -1,0 +1,57 @@
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+
+# Route isolation: keep TUN disabled until this canary is tested alone. The
+# existing full-tunnel WireGuard profile must be disconnected first.
+tun:
+  enable: false
+  stack: mixed
+  auto-route: false
+  auto-detect-interface: true
+
+proxies:
+  - name: REALITY-SG
+    type: vless
+    server: REPLACE_WITH_EXTERNAL_EDGE_HOST
+    port: 443
+    uuid: REPLACE_WITH_EXTERNAL_UUID
+    network: tcp
+    udp: true
+    tls: true
+    servername: www.cloudflare.com
+    flow: xtls-rprx-vision
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: REPLACE_WITH_EXTERNAL_REALITY_PUBLIC_KEY
+      short-id: REPLACE_WITH_EXTERNAL_SHORT_ID
+
+  - name: HY2-SG
+    type: hysteria2
+    server: REPLACE_WITH_EXTERNAL_EDGE_HOST
+    port: 443
+    password: REPLACE_WITH_EXTERNAL_HYSTERIA_PASSWORD
+    sni: REPLACE_WITH_EXTERNAL_HYSTERIA_SNI
+    alpn:
+      - h3
+    skip-cert-verify: false
+    udp: true
+
+proxy-groups:
+  - name: GLOBAL-STABLE
+    type: fallback
+    proxies:
+      - REALITY-SG
+      - HY2-SG
+    url: https://www.gstatic.com/generate_204
+    expected-status: 204
+    interval: 30
+    timeout: 3000
+    max-failed-times: 2
+    lazy: false
+    empty-fallback: REJECT
+
+rules:
+  - MATCH,GLOBAL-STABLE

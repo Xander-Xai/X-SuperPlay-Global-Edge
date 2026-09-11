@@ -1,0 +1,326 @@
+name: repository-ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify required project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            README.md
+            PROJECT-ROADMAP.md
+            LICENSE
+            .gitignore
+            .gitattributes
+            .env.example
+            deploy/README.md
+            deploy/docker-compose.yml
+            scripts/README.md
+            scripts/lib.sh
+            scripts/validate.sh
+            scripts/preflight.sh
+            scripts/preflight-contract-test.sh
+            scripts/deploy.sh
+            scripts/status.sh
+            scripts/healthcheck.sh
+            scripts/wireguard-check.sh
+            scripts/data-plane-tune.sh
+            scripts/edge-qualify.sh
+            scripts/edge-race.sh
+            scripts/gost-ingress-relay.sh
+            scripts/gost-runtime-smoke-test.sh
+            scripts/p8-check.sh
+            scripts/client-e2e.ps1
+            scripts/machine-contract-test.sh
+            scripts/backup.sh
+            scripts/restore.sh
+            scripts/destroy.sh
+            scripts/secret-scan.sh
+            scripts/self-test.sh
+            docs/architecture.md
+            docs/security.md
+            docs/secret-rotation.md
+            docs/client-naming.md
+            docs/upgrade-rollback.md
+            docs/local-development.md
+            docs/deployment.md
+            docs/operations.md
+            docs/recovery.md
+            docs/acceptance.md
+            docs/data-plane-recovery.md
+            docs/gost-ingress-relay.md
+            docs/wstunnel-fallback.md
+            docs/first-deploy-runbook.md
+            docs/server-selection-and-cost.md
+            docs/asset-record.md
+            docs/g1-v2-resilient-global-edge-prd.md
+            docs/g1-v2-existing-component-disposition.md
+            docs/g1-v2-port-ownership-adr.md
+            deploy/g1-v2/docker-compose.yml
+            deploy/g1-v2/README.md
+            deploy/g1-v2/xray/config.json.example
+            deploy/g1-v2/hysteria/config.yaml.example
+            client/mihomo/README.md
+            client/mihomo/config.yaml.example
+            client/wireguard/README.md
+            client/wireguard/admin-split.conf.example
+            scripts/g1-v2-validate.sh
+            scripts/g1-v2-server-state.sh
+            scripts/g1-v2-failover.sh
+            scripts/g1-v2-deploy.sh
+            scripts/g1-v2-windows-state.ps1
+            scripts/g1-v2-protocol-abc.ps1
+            scripts/g1-v2-soak.ps1
+            scripts/g1-v2-metrics.ps1
+            scripts/g1-v2-regression-test.sh
+            scripts/g1-v2-regression-test.ps1
+            docs/g1-v2-metric-semantics.md
+          )
+          for path in "${required[@]}"; do
+            test -f "$path" || { echo "Missing required file: $path"; exit 1; }
+          done
+
+      - name: Reject tracked secret-shaped runtime files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env$|secrets/|clients/|runtime/|state/|backups/)|\.(key|pem|p12|pfx|conf)$'; then
+            echo "Tracked runtime/secret-shaped file detected."
+            exit 1
+          fi
+
+      - name: Enforce immutable runtime image identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE '^[[:space:]]*image:[[:space:]]*[^#[:space:]]+:latest([[:space:]]|$)' deploy --include='*.yml' --include='*.yaml' 2>/dev/null; then
+            echo "Floating :latest image tag detected in Compose configuration."
+            exit 1
+          fi
+          if grep -nE '^WGEASY_IMAGE=[^#[:space:]]+:latest([[:space:]]|$)' .env.example; then
+            echo "Floating :latest image tag detected in .env.example."
+            exit 1
+          fi
+          grep -Eq '^WGEASY_IMAGE=ghcr\.io/wg-easy/wg-easy:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$' .env.example \
+            || { echo "WGEASY_IMAGE must be pinned by tag+sha256 digest"; exit 1; }
+          grep -Eq 'image:.*wg-easy:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}' deploy/docker-compose.yml \
+            || { echo "Compose default must also contain immutable tag+digest identity"; exit 1; }
+
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Python test dependencies
+        shell: bash
+        run: python -m pip install --disable-pip-version-check -r tools/edge-health-agent/requirements.txt -r services/edge-health-api/requirements.txt
+
+      - name: Install ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: ShellCheck all shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --version | head -n1
+          shellcheck -x scripts/*.sh
+
+      - name: Validate PowerShell client probe syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/client-e2e.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+          Write-Host 'PASS: scripts/client-e2e.ps1 parses cleanly'
+
+      - name: Validate G1 v2 PowerShell probe syntax
+        shell: pwsh
+        run: |
+          $files = @(
+            'scripts/g1-v2-windows-state.ps1',
+            'scripts/g1-v2-protocol-abc.ps1',
+            'scripts/g1-v2-soak.ps1',
+            'scripts/g1-v2-metrics.ps1',
+            'scripts/g1-v2-regression-test.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error "$file`: $($_.Message)" }; exit 1 }
+          }
+          Write-Host 'PASS: G1 v2 PowerShell probes parse cleanly'
+
+      - name: Validate YAML files parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import sys, yaml, subprocess
+          files = subprocess.run(
+              ["git", "ls-files", "--", "*.yml", "*.yaml"],
+              capture_output=True, text=True, check=True).stdout.split()
+          for f in files:
+              try:
+                  with open(f, encoding="utf-8") as fh:
+                      list(yaml.safe_load_all(fh))
+              except Exception as exc:
+                  print(f"YAML parse error in {f}: {exc}")
+                  sys.exit(1)
+          print(f"PASS: {len(files)} YAML file(s) parse cleanly")
+          EOF
+
+      - name: Secret-shape scan over tracked content
+        shell: bash
+        run: bash scripts/secret-scan.sh
+
+      - name: Python regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s services/edge-health-api/tests -v
+          python -m unittest discover -s tools/edge-health-agent/tests -v
+
+      - name: G1 v2 additive artifact contract
+        shell: bash
+        run: |
+          bash scripts/g1-v2-validate.sh
+          bash scripts/g1-v2-deploy.sh --check
+
+      - name: G1 v2 P11-R1 regression contracts
+        shell: bash
+        run: bash scripts/g1-v2-regression-test.sh
+
+      - name: Repository self-test (failure path + doc links + render)
+        shell: bash
+        run: bash scripts/self-test.sh
+
+      - name: Production preflight fail-closed contract
+        shell: bash
+        run: bash scripts/preflight-contract-test.sh
+
+      - name: WireGuard machine contract regression
+        shell: bash
+        run: bash scripts/machine-contract-test.sh
+
+      - name: Pinned GOST TCP/UDP runtime smoke
+        shell: bash
+        run: bash scripts/gost-runtime-smoke-test.sh
+
+      - name: Render Docker Compose configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "${tmpdir}"' EXIT
+          export G1_V2_RUNTIME_DIR="${tmpdir}/g1-v2-runtime"
+          export EDGE_OBSERVATION_EVIDENCE_ROOT="${tmpdir}/observation-evidence"
+          export EDGE_OBSERVATION_IDENTITY_CONFIG="${tmpdir}/observation-identity.yml"
+          docker compose --env-file .env.example -f deploy/docker-compose.yml config --quiet
+          docker compose --env-file .env.example -f deploy/g1-v2/docker-compose.yml config --quiet
+          docker compose --env-file .env.example -f deploy/observation/docker-compose.yml config --quiet
+
+  docker-integration:
+    needs: [repository-contract, static-checks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build and exercise isolated observation runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          cleanup() {
+            docker compose -f deploy/observation/docker-compose.yml down --volumes --remove-orphans >/dev/null 2>&1 || true
+            rm -rf "${tmpdir}"
+          }
+          trap cleanup EXIT
+          mkdir -p "${tmpdir}/evidence"
+          chmod 0755 "${tmpdir}" "${tmpdir}/evidence"
+          cat >"${tmpdir}/node.yaml" <<'YAML'
+          identity:
+            node_id: ci-fixture
+            region: test
+            provider: ci
+            version: test
+          capabilities:
+            wireguard: false
+            xray_reality: false
+            hysteria2: false
+          metadata:
+            runtime_version: test
+            api_version: v1
+          YAML
+          chmod 0644 "${tmpdir}/node.yaml"
+          export EDGE_OBSERVATION_EVIDENCE_ROOT="${tmpdir}/evidence"
+          export EDGE_OBSERVATION_IDENTITY_CONFIG="${tmpdir}/node.yaml"
+          docker compose -f deploy/observation/docker-compose.yml config
+          docker compose -f deploy/observation/docker-compose.yml up -d --build
+          cid="$(docker compose -f deploy/observation/docker-compose.yml ps -q edge-health-api)"
+          test -n "${cid}"
+          for _ in $(seq 1 30); do
+            status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${cid}")"
+            [[ "${status}" == healthy ]] && break
+            [[ "${status}" == unhealthy || "${status}" == exited || "${status}" == dead ]] && {
+              docker compose -f deploy/observation/docker-compose.yml logs --no-color edge-health-api
+              exit 1
+            }
+            sleep 2
+          done
+          final_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${cid}")"
+          test "${final_status}" = healthy
+          python - <<'PY'
+          from urllib.request import urlopen
+          for path in ("/api/v1/health/current", "/api/v1/node/status", "/metrics"):
+              with urlopen("http://127.0.0.1:8080" + path, timeout=5) as response:
+                  assert response.status == 200
+          print("PASS: isolated observation runtime endpoints responded")
+          PY
+
+      - name: Cleanup isolated Docker resources
+        if: always()
+        shell: bash
+        env:
+          EDGE_OBSERVATION_EVIDENCE_ROOT: /tmp/x-superplay-edge-ci-evidence
+          EDGE_OBSERVATION_IDENTITY_CONFIG: /tmp/x-superplay-edge-ci-identity.yml
+        run: docker compose -f deploy/observation/docker-compose.yml down --volumes --remove-orphans

@@ -1,0 +1,116 @@
+name: Edge Desktop Windows Artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-artifact:
+    name: Build X-SuperPlay Edge Desktop Windows artifact
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/edge-desktop
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Verify exact checkout identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) {
+            throw "Exact-head checkout mismatch: expected $env:GITHUB_SHA, got $actual"
+          }
+          Write-Host "Exact HEAD verified: $actual"
+
+      - name: Verify existing desktop toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          corepack enable
+          corepack prepare pnpm@11.19.0 --activate
+          node --version
+          pnpm --version
+          rustc --version
+          cargo --version
+          rustup show active-toolchain
+
+      - name: Initialize dynamic MSVC environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw "vswhere.exe was not found: $vswhere" }
+          $installationPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1).Trim()
+          if ([string]::IsNullOrWhiteSpace($installationPath)) { throw 'No Visual Studio installation with VC.Tools.x86.x64 was found' }
+          $devCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path -LiteralPath $devCmd)) { throw "VsDevCmd.bat was not found: $devCmd" }
+          $envLines = @(cmd.exe /d /s /c "`"$devCmd`" -arch=x64 -host_arch=x64 && set" | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' })
+          if ($envLines.Count -eq 0) { throw 'VsDevCmd.bat did not return an environment' }
+          foreach ($line in $envLines) {
+            $pair = $line -split '=', 2
+            Set-Item -Path "Env:$($pair[0])" -Value $pair[1]
+          }
+          [IO.File]::AppendAllLines($env:GITHUB_ENV, $envLines, [Text.UTF8Encoding]::new($false))
+          Write-Host "MSVC environment initialized from $devCmd"
+          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'MSVC compiler is unavailable on windows-latest' }
+          if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) { throw 'MSVC linker is unavailable on windows-latest' }
+
+      - name: Install isolated desktop dependencies
+        run: pnpm install --frozen-lockfile --registry=https://registry.npmjs.org
+
+      - name: Build independent NSIS artifact
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CARGO_NET_OFFLINE = 'true'
+          $env:VITE_BUILD_VERSION = '0.1.0'
+          $env:VITE_BUILD_SHA = $env:GITHUB_SHA
+          $env:VITE_BUILD_TARGET = 'windows-x64'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop')
+          pnpm exec tauri build --ci --bundles nsis
+
+      - name: Write artifact identity and checksum
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundleRoot = Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri/target/release/bundle'
+          $installer = Get-ChildItem (Join-Path $bundleRoot 'nsis') -Filter '*.exe' -File |
+            Sort-Object Name | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not found below $bundleRoot" }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllLines((Join-Path $bundleRoot 'artifact-metadata.txt'), @(
+            'application_version=0.1.0'
+            "git_sha=$env:GITHUB_SHA"
+            'target_platform=windows-x64'
+            'production_ready=false'
+          ), $utf8)
+          [System.IO.File]::WriteAllLines((Join-Path $bundleRoot 'SHA256SUMS.txt'), @("$hash  $($installer.Name)"), [System.Text.UTF8Encoding]::new($false))
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "SHA256: $hash"
+
+      - name: Validate desktop boundary
+        shell: pwsh
+        working-directory: .
+        run: python scripts/ci/check-edge-desktop-boundary.py apps/edge-desktop
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: X-SuperPlay-Edge-Desktop-Windows
+          if-no-files-found: error
+          path: |
+            apps/edge-desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/edge-desktop/src-tauri/target/release/bundle/artifact-metadata.txt
+            apps/edge-desktop/src-tauri/target/release/bundle/SHA256SUMS.txt

@@ -1,0 +1,22 @@
+[package]
+name = "x-superplay-edge-desktop"
+version = "0.1.0"
+description = "Read-only X-SuperPlay Global Edge observation desktop shell"
+authors = ["X-SuperPlay"]
+edition = "2021"
+
+[lib]
+name = "x_superplay_edge_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tauri = { version = "2", features = [] }
+
+[dev-dependencies]
+rcgen = "0.13"
+sha2 = "0.10"
+time = "0.3"

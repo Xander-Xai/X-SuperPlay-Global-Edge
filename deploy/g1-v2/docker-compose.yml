@@ -1,0 +1,42 @@
+name: ${G1_V2_COMPOSE_PROJECT_NAME:-x-superplay-global-edge-g1-v2}
+
+# Opt-in additive server plane. This file is intentionally separate from the
+# current wg-easy Compose project. Do not start it until the port-ownership ADR
+# is PASS on the real host and external secrets/configs have been rendered.
+services:
+  reality:
+    # Mihomo currently documents incompatibility with Xray v26.7.11+ Reality
+    # behaviour; keep the reviewed stable v26.3.27 until a compatibility test
+    # justifies a newer release.
+    image: ${XRAY_IMAGE:-ghcr.io/xtls/xray-core:26.3.27@sha256:592ec4d11f656db95598d01e76dbcc6e002d67360b96a5436500a938230f52c7}
+    command: ["run", "-config", "/etc/xray/config.json"]
+    restart: unless-stopped
+    ports:
+      - "${G1_V2_REALITY_PORT:-443}:443/tcp"
+    volumes:
+      - "${G1_V2_RUNTIME_DIR:?G1_V2_RUNTIME_DIR must be an absolute canonical path}/xray:/etc/xray:ro"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "xray", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  hysteria2:
+    image: ${HYSTERIA_IMAGE:-tobyxdd/hysteria:v2.12.2@sha256:9725222899831fd80ca802c4f6984b5f6ad96672248a25dd7d8f781f5029f87c}
+    command: ["server", "-c", "/etc/hysteria/config.yaml"]
+    restart: unless-stopped
+    ports:
+      - "${G1_V2_HY2_PORT:-443}:443/udp"
+    volumes:
+      - "${G1_V2_RUNTIME_DIR:?G1_V2_RUNTIME_DIR must be an absolute canonical path}/hysteria:/etc/hysteria:ro"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "hysteria", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

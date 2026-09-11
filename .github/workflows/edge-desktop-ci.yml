@@ -1,0 +1,272 @@
+name: Edge Desktop CI
+
+on:
+  push:
+    paths:
+      - "apps/edge-desktop/**"
+      - "docs/client/**"
+      - ".gitignore"
+      - "services/edge-health-api/runtime/**"
+      - "scripts/ci/check-edge-desktop-boundary.py"
+      - ".github/workflows/edge-desktop-*.yml"
+  pull_request:
+    paths:
+      - "apps/edge-desktop/**"
+      - "docs/client/**"
+      - ".gitignore"
+      - "services/edge-health-api/runtime/**"
+      - "scripts/ci/check-edge-desktop-boundary.py"
+      - ".github/workflows/edge-desktop-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-acceptance:
+    name: Exact-head Windows desktop acceptance
+    runs-on: windows-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    defaults:
+      run:
+        working-directory: apps/edge-desktop
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact checkout identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) {
+            throw "Exact-head checkout mismatch: expected $env:GITHUB_SHA, got $actual"
+          }
+          Write-Host "Exact HEAD verified: $actual"
+          Write-Host "Runner: $env:RUNNER_NAME ($env:RUNNER_OS/$env:RUNNER_ARCH)"
+
+      - name: Verify existing Node and pnpm toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          corepack enable
+          corepack prepare pnpm@11.19.0 --activate
+          node --version
+          pnpm --version
+
+      - name: Verify existing Rust and Cargo toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustc --version
+          cargo --version
+          rustup show active-toolchain
+
+      - name: Initialize dynamic MSVC environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw "vswhere.exe was not found: $vswhere" }
+          $installationPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1).Trim()
+          if ([string]::IsNullOrWhiteSpace($installationPath)) { throw 'No Visual Studio installation with VC.Tools.x86.x64 was found' }
+          $devCmd = Join-Path $installationPath 'Common7\Tools\VsDevCmd.bat'
+          if (-not (Test-Path -LiteralPath $devCmd)) { throw "VsDevCmd.bat was not found: $devCmd" }
+          $envLines = @(cmd.exe /d /s /c "`"$devCmd`" -arch=x64 -host_arch=x64 && set" | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' })
+          if ($envLines.Count -eq 0) { throw 'VsDevCmd.bat did not return an environment' }
+          foreach ($line in $envLines) {
+            $pair = $line -split '=', 2
+            Set-Item -Path "Env:$($pair[0])" -Value $pair[1]
+          }
+          [IO.File]::AppendAllLines($env:GITHUB_ENV, $envLines, [Text.UTF8Encoding]::new($false))
+          Write-Host "MSVC environment initialized from $devCmd"
+
+      - name: Verify existing MSVC toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'MSVC compiler is unavailable on windows-latest' }
+          if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) { throw 'MSVC linker is unavailable on windows-latest' }
+          Write-Host 'MSVC compiler and linker are available'
+
+      - name: Install isolated desktop dependencies
+        run: pnpm install --frozen-lockfile --registry=https://registry.npmjs.org
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Desktop tests
+        run: pnpm test
+
+      - name: Frontend production build
+        run: pnpm build
+
+      - name: Cargo metadata and check
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --no-self-update
+          rustup default stable-x86_64-pc-windows-msvc
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri')
+          cargo metadata --locked --offline --format-version 1 --no-deps
+          cargo check --locked --offline
+
+      - name: Cargo unit tests
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CARGO_NET_OFFLINE = 'true'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri')
+          cargo test --locked --offline
+
+      - name: Build Tauri release NSIS installer
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CARGO_NET_OFFLINE = 'true'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop')
+          pnpm exec tauri build --ci --bundles nsis
+
+      - name: Edge API regression tests
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'services/edge-health-api')
+          Write-Host "Python test root: $((Get-Location).Path)"
+          python -c "import runtime; print(runtime.__file__)"
+          python -m unittest discover -s tests -p 'test*.py'
+
+      - name: Health agent regression tests
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/edge-health-agent')
+          Write-Host "Python test root: $((Get-Location).Path)"
+          python -m unittest discover -s tests -p 'test*.py'
+
+      - name: Desktop security checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pnpm exec vitest run src/security.test.ts
+          $repoRoot = (Resolve-Path (Join-Path (Get-Location) '..\..')).Path
+          Set-Location -LiteralPath $repoRoot
+
+          # Renderer code may not own or persist private credentials.
+          $rendererMatches = @(
+            rg -n -i --glob '*.ts' --glob '*.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!src/security.test.ts' --glob '!src/**/*.test.ts' `
+              'private[_-]?key|ssh[_-]?credential|wireguard[_-]?secret|-----BEGIN .*PRIVATE KEY-----' `
+              apps/edge-desktop/src
+          )
+          $rendererExitCode = $LASTEXITCODE
+          if ($rendererExitCode -gt 1) {
+            throw "Renderer security scan failed with rg exit code $rendererExitCode"
+          }
+          if ($rendererMatches.Count -gt 0) {
+            $rendererMatches | Write-Error
+            throw 'Renderer source security policy matched credential ownership or secret material'
+          }
+
+          # Native Rust may handle credentials in memory, but may not embed
+          # credential material, spawn processes, or control production hosts.
+          $nativeMatches = @(
+            rg -n -i --glob '*.rs' `
+              'Command::new|std::process|powershell|cmd\.exe|-----BEGIN .*PRIVATE KEY-----|include_(bytes|str)!\s*\([^)]*\.(pem|key|pfx|p12)|ssh[_-]?credential|wireguard[_-]?secret|api[_-]?key|access[_-]?token|client[_-]?secret|password\s*=' `
+              apps/edge-desktop/src-tauri/src
+          )
+          $nativeExitCode = $LASTEXITCODE
+          if ($nativeExitCode -gt 1) {
+            throw "Native security scan failed with rg exit code $nativeExitCode"
+          }
+          if ($nativeMatches.Count -gt 0) {
+            $nativeMatches | Write-Error
+            throw 'Native source security policy matched embedded secret material or forbidden control'
+          }
+
+          # A tracked credential file is a secret-material failure regardless
+          # of whether documentation mentions the extension elsewhere.
+          $trackedCredentialFiles = @(
+            git ls-files -- 'apps/edge-desktop/**' |
+              Where-Object { $_ -match '(?i)\.(pem|key|pfx|p12)$' }
+          )
+          if ($trackedCredentialFiles.Count -gt 0) {
+            $trackedCredentialFiles | Write-Error
+            throw 'Tracked application credential file detected'
+          }
+          $global:LASTEXITCODE = 0
+
+      - name: Desktop boundary checks
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/check-edge-desktop-boundary.py apps/edge-desktop
+          $changed = @(git diff --name-only origin/main..HEAD)
+          $forbidden = @($changed | Where-Object {
+            $path = $_ -replace '\\', '/'
+            $path -match '^(deploy|runtime|server|infra|ops|secrets|clients|backups|client/wireguard|client/mihomo)(/|$)' -or
+              $path -match '(^|/)(docker-compose(?:\.[^/]*)?|Dockerfile|xray[^/]*|wireguard[^/]*|hysteria2?[^/]*|vps[^/]*)(/|$)'
+          })
+          if ($forbidden.Count -gt 0) {
+            $forbidden | Write-Error
+            throw 'Forbidden runtime/server path changed in the exact-head diff'
+          }
+          Write-Host "Forbidden-prefix scan passed for $($changed.Count) changed path(s)"
+
+      - name: Write and verify artifact identity
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundleRoot = Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri/target/release/bundle'
+          $installer = Get-ChildItem (Join-Path $bundleRoot 'nsis') -Filter '*.exe' -File |
+            Sort-Object Name | Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer was not found below $bundleRoot"
+          }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+          $metadataPath = Join-Path $bundleRoot 'artifact-metadata.txt'
+          $checksumPath = Join-Path $bundleRoot 'SHA256SUMS.txt'
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::WriteAllLines($metadataPath, @(
+            'application_version=0.1.0'
+            "git_sha=$env:GITHUB_SHA"
+            'target_platform=windows-x64'
+            'production_ready=false'
+          ), $utf8)
+          [System.IO.File]::WriteAllLines($checksumPath, @("$hash  $($installer.Name)"), [System.Text.UTF8Encoding]::new($false))
+          $metadata = Get-Content -Raw -LiteralPath $metadataPath
+          if ($metadata -notmatch "git_sha=$([regex]::Escape($env:GITHUB_SHA))") {
+            throw 'Artifact metadata does not contain the exact CI HEAD SHA'
+          }
+          $checksumLine = (Get-Content -LiteralPath $checksumPath | Select-Object -First 1).Trim()
+          if ($checksumLine -ne "$hash  $($installer.Name)") {
+            throw 'Artifact checksum file did not round-trip deterministically'
+          }
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "SHA256: $hash"
+
+      - name: Upload exact-head Windows artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        env:
+          ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: 1
+          ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: 1200000
+        with:
+          name: X-SuperPlay-Edge-Desktop-Windows
+          if-no-files-found: error
+          path: |
+            apps/edge-desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/edge-desktop/src-tauri/target/release/bundle/artifact-metadata.txt
+            apps/edge-desktop/src-tauri/target/release/bundle/SHA256SUMS.txt

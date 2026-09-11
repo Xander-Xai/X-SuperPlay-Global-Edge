@@ -1,0 +1,2 @@
+# Canonical dependency source for the API image; keep runtime pins in sync by reference.
+-r ../../tools/edge-health-agent/requirements.txt

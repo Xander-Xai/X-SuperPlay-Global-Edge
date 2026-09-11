@@ -1,0 +1,17 @@
+listen: :443
+
+tls:
+  cert: /etc/hysteria/server.crt
+  key: /etc/hysteria/server.key
+
+auth:
+  type: password
+  password: REPLACE_WITH_EXTERNAL_HYSTERIA_PASSWORD
+
+# Leave bandwidth limits unset initially. The standard/default congestion
+# behaviour is required until measured capacity justifies a bounded change.
+masquerade:
+  type: proxy
+  proxy:
+    url: https://www.cloudflare.com/
+    rewriteHost: true

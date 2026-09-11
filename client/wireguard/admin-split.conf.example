@@ -1,0 +1,13 @@
+[Interface]
+PrivateKey = REPLACE_WITH_EXTERNAL_ADMIN_PRIVATE_KEY
+Address = REPLACE_WITH_ADMIN_CLIENT_ADDRESS
+DNS = REPLACE_WITH_ADMIN_DNS
+MTU = 1280
+
+[Peer]
+PublicKey = REPLACE_WITH_EXTERNAL_SERVER_PUBLIC_KEY
+Endpoint = REPLACE_WITH_EXTERNAL_ADMIN_ENDPOINT:51820
+# Only SSH, the WireGuard peer and approved private services go through this
+# profile. Do not replace this list with 0.0.0.0/0.
+AllowedIPs = REPLACE_WITH_SSH_HOST_IP/32, REPLACE_WITH_ADMIN_NETWORK_CIDR
+# PersistentKeepalive = 25
