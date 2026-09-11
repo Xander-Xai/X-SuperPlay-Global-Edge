@@ -67,9 +67,10 @@ function Rtt([string]$hostName, [int]$count) {
 }
 $rttHost=if ($RttTarget) { $RttTarget } else { $Target.Host }
 for ($i=1; $i -le $Iterations; $i++) {
-    $metric=Metric $Target.AbsoluteUri; $rtt=Rtt $rttHost $RttSamples; $os=Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+    $metric=Metric $Target.AbsoluteUri; $rtt=Rtt $rttHost $RttSamples
+    $os=if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) { Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue } else { $null }
     $age=[int][math]::Floor(([DateTimeOffset]::UtcNow-$sessionStarted).TotalSeconds); if ($age -lt $previousAge) { throw 'SOAK_EVIDENCE=INVALID connection_age_s regressed during resume' }; $previousAge=$age
-    $route=Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
+    $route=if (Get-Command Get-NetRoute -ErrorAction SilentlyContinue) { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1 } else { $null }
     $row=[ordered]@{
         schema='g1-v2-soak.v2'; soak_session_id=$sessionId; soak_started_at=$sessionStartedText; timestamp_utc=[DateTime]::UtcNow.ToString('o'); sample=$i; connection_age_s=$age; transport=$Transport
         active_route=$(if ($route) { "$($route.NextHop) via $($route.InterfaceAlias)" } else { $null }); target=$Target.AbsoluteUri; success=$metric.success; http_status=$metric.http_status
