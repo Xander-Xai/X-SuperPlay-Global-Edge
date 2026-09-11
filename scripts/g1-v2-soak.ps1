@@ -20,15 +20,32 @@ function Read-ExistingSession([string]$path) {
     $rows = @()
     foreach ($line in $lines) { try { $rows += ($line | ConvertFrom-Json -ErrorAction Stop) } catch { throw "SOAK_EVIDENCE=INVALID malformed JSONL: $($_.Exception.Message)" } }
     $ids = @($rows | ForEach-Object { $_.soak_session_id } | Select-Object -Unique)
-    $starts = @($rows | ForEach-Object { $_.soak_started_at } | Select-Object -Unique)
+    # ConvertFrom-Json materializes ISO timestamps as DateTime values and can
+    # normalize away fractional precision/offsets. Preserve the JSON string
+    # itself so a resumed session keeps byte-stable session metadata.
+    $starts = @(
+        $lines | ForEach-Object {
+            if ($_ -match '"soak_started_at":"([^"]+)"') { $Matches[1] }
+        } | Select-Object -Unique
+    )
     if ($ids.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$ids[0]) -or $starts.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$starts[0])) { throw 'SOAK_EVIDENCE=INVALID inconsistent soak_session_id or soak_started_at' }
     $previous = -1
     foreach ($row in $rows) { if ($null -eq $row.connection_age_s -or [int]$row.connection_age_s -lt $previous) { throw 'SOAK_EVIDENCE=INVALID non-monotonic connection_age_s' }; $previous = [int]$row.connection_age_s }
     [ordered]@{ session_id=[string]$ids[0]; started_at=[string]$starts[0]; last_age=$previous }
 }
 $existing = if ($NewSession) { if (Test-Path $OutputPath) { throw '-NewSession requires a new OutputPath' }; $null } else { Read-ExistingSession $OutputPath }
-if ($existing) { $sessionId=$existing.session_id; $sessionStarted=[DateTimeOffset]::Parse($existing.started_at); $previousAge=$existing.last_age }
-else { $sessionId=[guid]::NewGuid().ToString(); $sessionStarted=[DateTimeOffset]::UtcNow; $previousAge=-1 }
+if ($existing) {
+    $sessionId=$existing.session_id
+    $sessionStartedText=[string]$existing.started_at
+    $sessionStarted=[DateTimeOffset]::Parse($sessionStartedText)
+    $previousAge=$existing.last_age
+} else {
+    $sessionId=[guid]::NewGuid().ToString()
+    $sessionStarted=[DateTimeOffset]::UtcNow
+    $sessionStarted=$sessionStarted.AddTicks(-($sessionStarted.Ticks % [TimeSpan]::TicksPerMillisecond))
+    $sessionStartedText=$sessionStarted.ToUniversalTime().ToString('o')
+    $previousAge=-1
+}
 
 function Metric([string]$uri) {
     if ($SkipProbe) { return [ordered]@{ success=$false; http_status=$null; dns_latency_ms=$null; tcp_connect_latency_ms=$null; tls_latency_ms=$null; ttfb_ms=$null; total_latency_ms=$null; http_transfer_bps=$null; error='probe skipped for deterministic regression' } }
@@ -54,7 +71,7 @@ for ($i=1; $i -le $Iterations; $i++) {
     $age=[int][math]::Floor(([DateTimeOffset]::UtcNow-$sessionStarted).TotalSeconds); if ($age -lt $previousAge) { throw 'SOAK_EVIDENCE=INVALID connection_age_s regressed during resume' }; $previousAge=$age
     $route=Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | Select-Object -First 1
     $row=[ordered]@{
-        schema='g1-v2-soak.v2'; soak_session_id=$sessionId; soak_started_at=$sessionStarted.ToString('o'); timestamp_utc=[DateTime]::UtcNow.ToString('o'); sample=$i; connection_age_s=$age; transport=$Transport
+        schema='g1-v2-soak.v2'; soak_session_id=$sessionId; soak_started_at=$sessionStartedText; timestamp_utc=[DateTime]::UtcNow.ToString('o'); sample=$i; connection_age_s=$age; transport=$Transport
         active_route=$(if ($route) { "$($route.NextHop) via $($route.InterfaceAlias)" } else { $null }); target=$Target.AbsoluteUri; success=$metric.success; http_status=$metric.http_status
         rtt_samples=$rtt.samples; rtt_p50_ms=$rtt.p50_ms; rtt_p95_ms=$rtt.p95_ms; jitter_ms=$rtt.jitter_ms; packet_loss_pct=$rtt.packet_loss_pct
         dns_latency_ms=$metric.dns_latency_ms; tcp_connect_latency_ms=$metric.tcp_connect_latency_ms; tls_latency_ms=$metric.tls_latency_ms; http_204_latency_ms=$null; ttfb_ms=$metric.ttfb_ms; total_latency_ms=$metric.total_latency_ms

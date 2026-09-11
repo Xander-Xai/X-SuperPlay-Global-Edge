@@ -1,5 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+$powerShell = (Get-Command pwsh -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+if ([string]::IsNullOrWhiteSpace($powerShell)) {
+    $powerShell = (Get-Command powershell -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+}
+if ([string]::IsNullOrWhiteSpace($powerShell)) { throw 'PowerShell executable is required for soak regression' }
 . (Join-Path $PSScriptRoot 'g1-v2-metrics.ps1')
 $summary = Get-G1V2RttSummary ([double[]](10,11,12,13,50)) 5
 if ($summary.p50_ms -ne 12 -or $summary.p95_ms -ne 42.6 -or $summary.packet_loss_pct -ne 0) { throw "Unexpected percentile summary: $($summary | ConvertTo-Json -Compress)" }
@@ -7,10 +12,10 @@ Write-Output 'TEST_REAL_RTT_PERCENTILES=PASS p50=12 p95=42.6'
 $path = Join-Path $root '.temp\g1-v2-soak-regression.jsonl'
 if (Test-Path $path) { Remove-Item -Force $path }
 $soak = Join-Path $PSScriptRoot 'g1-v2-soak.ps1'
-& powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $soak -Target 'http://127.0.0.1:1/' -Iterations 2 -IntervalSeconds 0 -OutputPath $path -SkipProbe -SkipRtt | Out-Null
+& $powerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $soak -Target 'http://127.0.0.1:1/' -Iterations 2 -IntervalSeconds 0 -OutputPath $path -SkipProbe -SkipRtt | Out-Null
 $first = @(Get-Content -Encoding UTF8 $path | ForEach-Object { $_ | ConvertFrom-Json })
 Start-Sleep -Seconds 1
-& powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $soak -Target 'http://127.0.0.1:1/' -Iterations 1 -IntervalSeconds 0 -OutputPath $path -SkipProbe -SkipRtt | Out-Null
+& $powerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $soak -Target 'http://127.0.0.1:1/' -Iterations 1 -IntervalSeconds 0 -OutputPath $path -SkipProbe -SkipRtt | Out-Null
 $rows = @(Get-Content -Encoding UTF8 $path | ForEach-Object { $_ | ConvertFrom-Json })
 if ($rows.Count -ne 3) { throw "Expected 3 rows, got $($rows.Count)" }
 if (($rows | ForEach-Object soak_session_id | Select-Object -Unique).Count -ne 1) { throw 'Session id changed on resume' }

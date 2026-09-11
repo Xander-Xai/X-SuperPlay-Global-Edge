@@ -120,24 +120,22 @@ jobs:
           rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal --no-self-update
           rustup default stable-x86_64-pc-windows-msvc
           Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri')
-          cargo metadata --locked --offline --format-version 1 --no-deps
-          cargo check --locked --offline
+          cargo metadata --locked --format-version 1 --no-deps
+          cargo check --locked
 
       - name: Cargo unit tests
         shell: pwsh
         working-directory: .
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:CARGO_NET_OFFLINE = 'true'
           Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri')
-          cargo test --locked --offline
+          cargo test --locked
 
       - name: Build Tauri release NSIS installer
         shell: pwsh
         working-directory: .
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:CARGO_NET_OFFLINE = 'true'
           Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop')
           pnpm exec tauri build --ci --bundles nsis
 
