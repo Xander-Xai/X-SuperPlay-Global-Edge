@@ -174,15 +174,15 @@ jobs:
           Set-Location -LiteralPath $repoRoot
 
           # Renderer code may not own or persist private credentials.
+          $rendererFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'apps/edge-desktop/src') -Recurse -File |
+            Where-Object {
+              $_.Extension -in @('.ts', '.tsx') -and
+              $_.Name -notmatch '\.test\.tsx?$' -and
+              $_.FullName -notmatch '[\\/]src[\\/].*\.test\.tsx?$'
+            }
           $rendererMatches = @(
-            rg -n -i --glob '*.ts' --glob '*.tsx' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!src/security.test.ts' --glob '!src/**/*.test.ts' `
-              'private[_-]?key|ssh[_-]?credential|wireguard[_-]?secret|-----BEGIN .*PRIVATE KEY-----' `
-              apps/edge-desktop/src
+            $rendererFiles | Select-String -Pattern 'private[_-]?key|ssh[_-]?credential|wireguard[_-]?secret|-----BEGIN .*PRIVATE KEY-----' -CaseSensitive:$false
           )
-          $rendererExitCode = $LASTEXITCODE
-          if ($rendererExitCode -gt 1) {
-            throw "Renderer security scan failed with rg exit code $rendererExitCode"
-          }
           if ($rendererMatches.Count -gt 0) {
             $rendererMatches | Write-Error
             throw 'Renderer source security policy matched credential ownership or secret material'
@@ -190,15 +190,11 @@ jobs:
 
           # Native Rust may handle credentials in memory, but may not embed
           # credential material, spawn processes, or control production hosts.
+          $nativeFiles = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'apps/edge-desktop/src-tauri/src') -Recurse -File |
+            Where-Object { $_.Extension -eq '.rs' }
           $nativeMatches = @(
-            rg -n -i --glob '*.rs' `
-              'Command::new|std::process|powershell|cmd\.exe|-----BEGIN .*PRIVATE KEY-----|include_(bytes|str)!\s*\([^)]*\.(pem|key|pfx|p12)|ssh[_-]?credential|wireguard[_-]?secret|api[_-]?key|access[_-]?token|client[_-]?secret|password\s*=' `
-              apps/edge-desktop/src-tauri/src
+            $nativeFiles | Select-String -Pattern 'Command::new|std::process|powershell|cmd\.exe|-----BEGIN .*PRIVATE KEY-----|include_(bytes|str)!\s*\([^)]*\.(pem|key|pfx|p12)|ssh[_-]?credential|wireguard[_-]?secret|api[_-]?key|access[_-]?token|client[_-]?secret|password\s*=' -CaseSensitive:$false
           )
-          $nativeExitCode = $LASTEXITCODE
-          if ($nativeExitCode -gt 1) {
-            throw "Native security scan failed with rg exit code $nativeExitCode"
-          }
           if ($nativeMatches.Count -gt 0) {
             $nativeMatches | Write-Error
             throw 'Native source security policy matched embedded secret material or forbidden control'
