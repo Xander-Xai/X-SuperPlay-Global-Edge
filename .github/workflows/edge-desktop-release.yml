@@ -59,7 +59,9 @@ jobs:
             $pair = $line -split '=', 2
             Set-Item -Path "Env:$($pair[0])" -Value $pair[1]
           }
-          [IO.File]::AppendAllLines($env:GITHUB_ENV, $envLines, [Text.UTF8Encoding]::new($false))
+          foreach ($line in $envLines) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value $line -Encoding utf8
+          }
           Write-Host "MSVC environment initialized from $devCmd"
           if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) { throw 'MSVC compiler is unavailable on windows-latest' }
           if (-not (Get-Command link.exe -ErrorAction SilentlyContinue)) { throw 'MSVC linker is unavailable on windows-latest' }
@@ -72,7 +74,6 @@ jobs:
         working-directory: .
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:CARGO_NET_OFFLINE = 'true'
           $env:VITE_BUILD_VERSION = '0.1.0'
           $env:VITE_BUILD_SHA = $env:GITHUB_SHA
           $env:VITE_BUILD_TARGET = 'windows-x64'
