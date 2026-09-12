@@ -254,7 +254,7 @@ fn read_response(stream: &mut impl Read) -> Result<ObservationResponse, ChannelE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair};
+    use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair};
     use std::collections::HashSet;
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -493,20 +493,21 @@ mod tests {
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         let ca = ca_params.self_signed(&ca_key).expect("CA cert");
         let unknown_ca_key = KeyPair::generate().expect("unknown CA key");
-        let unknown_ca = CertificateParams::default()
+        let unknown_ca_params = CertificateParams::default();
+        let unknown_ca = unknown_ca_params
             .self_signed(&unknown_ca_key)
             .expect("unknown CA cert");
-        let server = issue(&ca, &ca_key, vec!["localhost".to_owned()], None);
-        let observer = issue(&ca, &ca_key, vec!["observer".to_owned()], None);
-        let wrong_scope = issue(&ca, &ca_key, vec!["wrong-scope".to_owned()], None);
+        let server = issue(&ca_params, &ca_key, vec!["localhost".to_owned()], None);
+        let observer = issue(&ca_params, &ca_key, vec!["observer".to_owned()], None);
+        let wrong_scope = issue(&ca_params, &ca_key, vec!["wrong-scope".to_owned()], None);
         let unknown_client_ca = issue(
-            &unknown_ca,
+            &unknown_ca_params,
             &unknown_ca_key,
             vec!["unknown".to_owned()],
             None,
         );
         let expired = issue(
-            &ca,
+            &ca_params,
             &ca_key,
             vec!["expired".to_owned()],
             Some((
@@ -526,7 +527,7 @@ mod tests {
     }
 
     fn issue(
-        ca: &Certificate,
+        ca_params: &CertificateParams,
         ca_key: &KeyPair,
         names: Vec<String>,
         validity: Option<(OffsetDateTime, OffsetDateTime)>,
@@ -537,7 +538,11 @@ mod tests {
             params.not_before = not_before;
             params.not_after = not_after;
         }
-        let cert = params.signed_by(&key, ca, ca_key).expect("identity cert");
+        // rcgen 0.14 models the CA certificate and signing key as an Issuer.
+        // Keeping the original CA params preserves its subject, key identifier,
+        // and CA/key-usage semantics while retaining the existing chain.
+        let issuer = Issuer::from_params(ca_params, ca_key);
+        let cert = params.signed_by(&key, &issuer).expect("identity cert");
         let cert_der = cert.der().to_vec();
         Identity {
             fingerprint: fingerprint(&cert_der),
