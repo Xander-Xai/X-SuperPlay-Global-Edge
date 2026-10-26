@@ -1,0 +1,10 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[lint.per-file-ignores]
+# Tests adjust sys.path before importing the local package and keep long
+# assertion lines for readability.
+"**/tests/**" = ["E402", "E501"]
