@@ -6,17 +6,17 @@ import json
 import math
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from jsonschema.exceptions import ValidationError
-
 from probe import validate_evidence
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -26,7 +26,7 @@ def _parse_timestamp(value: str) -> datetime:
         raise ValueError("evidence timestamp must be an ISO-8601 timestamp") from exc
     if parsed.tzinfo is None:
         raise ValueError("evidence timestamp must include a timezone")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -62,9 +62,7 @@ class EvidenceStore:
         if not self.root.exists():
             return []
         return sorted(
-            path
-            for path in self.root.rglob("probe-*.json")
-            if path.is_file() and path.name != "summary.json"
+            path for path in self.root.rglob("probe-*.json") if path.is_file() and path.name != "summary.json"
         )
 
     def write(self, evidence: Mapping[str, Any]) -> Path:
@@ -133,8 +131,7 @@ class EvidenceStore:
         success_count = sum(self._check_success(record) for record in records)
         tcp_failures = sum(record["tcp"]["success"] is not True for record in records)
         http_failures = sum(
-            sum(item.get("success") is not True for item in record["http"].values())
-            for record in records
+            sum(item.get("success") is not True for item in record["http"].values()) for record in records
         )
         return {
             "generated_at": _utc_now().isoformat(timespec="milliseconds").replace("+00:00", "Z"),
@@ -160,11 +157,11 @@ class EvidenceStore:
     def cleanup(self, now: datetime | None = None) -> list[Path]:
         """Delete probe files older than ``max_days`` and remove empty date dirs."""
 
-        current = (now or _utc_now()).astimezone(timezone.utc)
+        current = (now or _utc_now()).astimezone(UTC)
         cutoff = current - timedelta(days=self.max_days)
         removed: list[Path] = []
         for path in self._probe_files():
-            modified = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+            modified = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             if modified < cutoff:
                 path.unlink()
                 removed.append(path)

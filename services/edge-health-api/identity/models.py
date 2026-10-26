@@ -20,6 +20,7 @@ class NodeIdentity:
             "version": self.version,
         }
 
+
 @dataclass(frozen=True)
 class NodeCapabilities:
     wireguard: bool = False
@@ -32,6 +33,8 @@ class NodeCapabilities:
             "xray_reality": self.xray_reality,
             "hysteria2": self.hysteria2,
         }
+
+
 @dataclass(frozen=True)
 class NodeMetadata:
     node_id: str

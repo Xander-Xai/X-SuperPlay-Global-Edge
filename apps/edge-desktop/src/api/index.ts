@@ -12,8 +12,16 @@ export function createEdgeApiClient(): EdgeApiClient {
   if (typeof baseUrl === 'string' && baseUrl.trim()) return new HttpEdgeApiClient(baseUrl)
   const scenario = (import.meta.env.VITE_EDGE_MOCK_SCENARIO || 'healthy') as MockScenario
   const supported: MockScenario[] = [
-    'healthy', 'warning', 'critical', 'unavailable', 'unknown', 'events',
-    'stale', 'timeout', 'transient-retry-success', 'malformed-content-type',
+    'healthy',
+    'warning',
+    'critical',
+    'unavailable',
+    'unknown',
+    'events',
+    'stale',
+    'timeout',
+    'transient-retry-success',
+    'malformed-content-type',
     'unsupported-api-version',
   ]
   return new MockEdgeApiClient(supported.includes(scenario) ? scenario : 'healthy')

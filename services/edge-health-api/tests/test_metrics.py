@@ -56,9 +56,7 @@ def make_evidence(timestamp="2026-09-08T12:00:00.000Z", score=100.0):
     }
 
 
-METRIC_LINE = re.compile(
-    r"^(x_superplay_[a-z0-9_]+) (NaN|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$"
-)
+METRIC_LINE = re.compile(r"^(x_superplay_[a-z0-9_]+) (NaN|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$")
 REQUIRED = {
     "x_superplay_health_score",
     "x_superplay_http_success_rate",
