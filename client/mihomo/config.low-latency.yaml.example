@@ -38,7 +38,8 @@ sniffer:
     TLS:  { ports: [443, 8443] }
     QUIC: { ports: [443, 8443] }
   skip-domain:
-    - "+.push.apple.com"
+    # Add your push-notification domains here; they should not be sniffed.
+    - "+.push.example.com"
 
 dns:
   enable: true
@@ -49,25 +50,25 @@ dns:
   fake-ip-filter:
     - "*.lan"
     - "*.local"
-    - "+.msftconnecttest.com"
-    - "+.msftncsi.com"
-    - "time.windows.com"
-    - "localhost.ptlogin2.qq.com"
+    # Add captive-portal, connectivity-check, and time-sync domains from your
+    # own environment so they receive real addresses instead of fake-ip.
+    - "+.example.com"
   # default-nameserver only resolves the DoH hostnames below and must be direct.
+  # Supply resolvers from the private secret store; do not commit real ones.
   default-nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
+    - REPLACE_WITH_DNS_PRIMARY
+    - REPLACE_WITH_DNS_SECONDARY
   nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
-    - https://dns.alidns.com/dns-query
+    - REPLACE_WITH_DNS_PRIMARY
+    - REPLACE_WITH_DNS_SECONDARY
+    - https://REPLACE_WITH_DOH_HOST/dns-query
   # Resolving the proxy server itself must never depend on the tunnel.
   proxy-server-nameserver:
-    - 223.5.5.5
-    - https://dns.alidns.com/dns-query
+    - REPLACE_WITH_DNS_PRIMARY
+    - https://REPLACE_WITH_DOH_HOST/dns-query
   nameserver-policy:
-    "geosite:cn,private":      [223.5.5.5, 119.29.29.29, https://dns.alidns.com/dns-query]
-    "geosite:geolocation-!cn": [https://1.1.1.1/dns-query, https://8.8.8.8/dns-query]
+    "geosite:cn,private":      [REPLACE_WITH_DNS_PRIMARY, REPLACE_WITH_DNS_SECONDARY, "https://REPLACE_WITH_DOH_HOST/dns-query"]
+    "geosite:geolocation-!cn": ["https://REPLACE_WITH_DOH_HOST/dns-query"]
 
 proxies:
   - name: REALITY-SG
@@ -133,7 +134,7 @@ rules:
   - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
   - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
   - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+  # Add your carrier-grade NAT range here if the uplink uses one.
   # Mainland destinations stay local; routing them through Singapore is the
   # single largest avoidable source of latency on this link.
   - GEOSITE,cn,DIRECT
