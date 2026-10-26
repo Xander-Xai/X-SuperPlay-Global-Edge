@@ -35,6 +35,92 @@ function jsonResponse(body: unknown, status = 200, contentType = 'application/js
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': contentType } })
 }
 
+const nodeIdentity = {
+  node_id: 'edge-test',
+  region: 'example-region',
+  provider: 'example-provider',
+  version: 'p13-test',
+}
+
+const nodeServices = {
+  node_id: 'edge-test',
+  services: nodeStatus.service_states,
+  timestamp: nodeStatus.timestamp,
+  corrupted_evidence_count: 0,
+}
+
+const nodeConnection = {
+  node_id: 'edge-test',
+  connection_state: 'connected',
+  protocol: 'tcp_probe',
+  endpoint_metadata: { host: 'edge.example.invalid', port: 443 },
+  timestamp: nodeStatus.timestamp,
+  corrupted_evidence_count: 0,
+}
+
+const nodeCapabilities = { wireguard: true, xray_reality: true, hysteria2: false }
+
+const nodeMetadata = { node_id: 'edge-test', runtime_version: 'edge-runtime-state-v1', api_version: 'v1' }
+
+const healthCurrent = {
+  node_status: 'healthy',
+  health_score: 100,
+  latest_metrics: {},
+  timestamp: nodeStatus.timestamp,
+  corrupted_evidence_count: 0,
+}
+
+const healthHistory = {
+  availability: 100,
+  latency_percentiles: { p95: 120 },
+  historical_summary: { total_checks: 1, success_rate: 100 },
+}
+
+const eventsResponse = { events: [], resolved: true, timestamp: nodeStatus.timestamp }
+
+const metricsText = [
+  '# TYPE x_superplay_health_score gauge',
+  'x_superplay_health_score 100',
+  'x_superplay_http_success_rate 100',
+  'x_superplay_latency_p50_ms 60',
+  'x_superplay_latency_p95_ms 120',
+  'x_superplay_node_status 1',
+  'x_superplay_alert_count 0',
+].join('\n')
+
+const aggregatePayload = {
+  status: nodeStatus,
+  identity: nodeIdentity,
+  services: nodeServices,
+  connection: nodeConnection,
+  capabilities: nodeCapabilities,
+  metadata: nodeMetadata,
+  health_current: healthCurrent,
+  health_history: healthHistory,
+  events: eventsResponse,
+  metrics_text: metricsText,
+}
+
+const perResourceRoutes: Record<string, unknown> = {
+  '/api/v1/node/status': nodeStatus,
+  '/api/v1/node/identity': nodeIdentity,
+  '/api/v1/node/services': nodeServices,
+  '/api/v1/node/connection': nodeConnection,
+  '/api/v1/node/capabilities': nodeCapabilities,
+  '/api/v1/node/metadata': nodeMetadata,
+  '/api/v1/health/current': healthCurrent,
+  '/api/v1/health/history': healthHistory,
+  '/api/v1/events': eventsResponse,
+}
+
+function perResourceFetch(url: string): Response {
+  if (url.endsWith('/metrics')) {
+    return new Response(metricsText, { status: 200, headers: { 'content-type': 'text/plain; version=0.0.4' } })
+  }
+  const route = Object.keys(perResourceRoutes).find((candidate) => url.endsWith(candidate))
+  return jsonResponse(perResourceRoutes[route as string])
+}
+
 describe('Edge API adapter', () => {
   it.each(['healthy', 'warning', 'critical', 'unknown', 'events'] as const)('supports %s mock fixture', async (scenario) => {
     const client = new MockEdgeApiClient(scenario)
@@ -148,5 +234,40 @@ describe('Edge API adapter', () => {
     const metrics = parsePrometheusMetrics(text)
     expect(Number.isNaN(metrics.x_superplay_health_score)).toBe(true)
     expect(metrics.x_superplay_alert_count).toBe(0)
+  })
+
+  it('serves the whole dashboard from one aggregate request when the API exposes it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(aggregatePayload))
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
+    const snapshot = await loadDashboardSnapshot(client)
+    expect(snapshot.nodeId).toBe('edge-test')
+    expect(snapshot.p95LatencyMs).toBe(120)
+    expect(snapshot.resourceErrors).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:8080/api/v1/node/snapshot')
+  })
+
+  it('falls back to the per-resource endpoints when the aggregate route is not served', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/node/snapshot')) return jsonResponse({ error: 'not_found' }, 404)
+      return perResourceFetch(url)
+    })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock as unknown as typeof fetch })
+    const snapshot = await loadDashboardSnapshot(client)
+    expect(snapshot.nodeId).toBe('edge-test')
+    expect(snapshot.p95LatencyMs).toBe(120)
+    expect(snapshot.resourceErrors).toEqual([])
+  })
+
+  it('stops probing the aggregate route after the server reported it as absent', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/node/snapshot')) return jsonResponse({ error: 'not_found' }, 404)
+      return perResourceFetch(url)
+    })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock as unknown as typeof fetch })
+    await loadDashboardSnapshot(client)
+    await loadDashboardSnapshot(client)
+    const aggregateCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/node/snapshot'))
+    expect(aggregateCalls).toHaveLength(1)
   })
 })
