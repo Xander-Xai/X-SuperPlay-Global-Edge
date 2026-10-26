@@ -55,6 +55,9 @@ separate WireGuard application for the primary daily-use path.
   reversible install/start/stop path.
 - [ ] Add a narrow privileged helper/service boundary for operations that cannot
   safely run in the normal desktop process.
+- [ ] Define desktop/service ownership and authenticate privileged IPC before
+  the helper can mutate proxy, route, DNS, or TUN state; include
+  unauthorized-caller rejection in the P0 acceptance criteria.
 - [ ] Restore proxy, route, DNS, and TUN state after normal disconnect, core
   crash, desktop crash, failed upgrade, or interrupted startup.
 - [ ] Add a startup reconciliation pass so stale state from a previous session
