@@ -13,6 +13,18 @@ function serviceTone(status: string) {
   return status === 'observed' || status === 'healthy' ? 'service-good' : 'service-muted'
 }
 
+function formatAge(ageMs: number | null) {
+  if (ageMs === null) return 'unknown'
+  if (ageMs < 1000) return `${ageMs}ms`
+  const seconds = Math.round(ageMs / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 48) return `${hours}h`
+  return `${Math.round(hours / 24)}d`
+}
+
 export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
     <section aria-label="Dashboard" className="view-stack">
@@ -72,7 +84,9 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
         </div>
       </div>
 
-      <p className="footnote">Observed {snapshot.timestamp ?? 'time unavailable'} · corrupted evidence: {snapshot.corruptedEvidenceCount}</p>
+      <p className="footnote">
+        Observed {snapshot.timestamp ?? 'time unavailable'} · data age {formatAge(snapshot.ageMs)} at last refresh · corrupted evidence: {snapshot.corruptedEvidenceCount}
+      </p>
     </section>
   )
 }

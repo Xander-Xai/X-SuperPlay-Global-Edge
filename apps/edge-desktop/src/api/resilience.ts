@@ -3,6 +3,15 @@ export const DEFAULT_TIMEOUT_MS = 5000
 export const DEFAULT_MAX_ATTEMPTS = 2
 export const STALE_THRESHOLD_MS = 5 * 60 * 1000
 export const POLL_INTERVAL_MS = 30 * 1000
+// Background polling must not hold the link for the full default budget.
+export const POLL_TIMEOUT_MS = 3000
+export const POLL_MAX_ATTEMPTS = 1
+// Optional resources are additive: they degrade to a fallback instead of
+// blocking the view, so they get a tighter budget than required resources.
+export const OPTIONAL_TIMEOUT_MS = 2000
+export const OPTIONAL_MAX_ATTEMPTS = 1
+const RETRY_BACKOFF_MIN_MS = 250
+const RETRY_BACKOFF_MAX_MS = 500
 
 export type ClientApiState =
   | 'normal'
@@ -76,9 +85,12 @@ export class UnsupportedApiVersionError extends Error {
   }
 }
 
-export interface RequestPolicyOptions {
+export interface RequestBudget {
   timeoutMs?: number
   maxAttempts?: number
+}
+
+export interface RequestPolicyOptions extends RequestBudget {
   signal?: AbortSignal
   fetchImpl?: typeof fetch
 }
@@ -91,6 +103,32 @@ function isAbortError(error: unknown): boolean {
 
 function isRetryableTransport(error: unknown): boolean {
   return !(error instanceof ApiCancelledError)
+}
+
+/**
+ * Jittered pause between bounded attempts so a transient jitter spike does not
+ * fire both attempts back to back.
+ */
+async function waitBeforeRetry(signal?: AbortSignal): Promise<void> {
+  const span = RETRY_BACKOFF_MAX_MS - RETRY_BACKOFF_MIN_MS + 1
+  const delay = RETRY_BACKOFF_MIN_MS + Math.floor(Math.random() * span)
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout>
+    const onAbort = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(new ApiCancelledError())
+    }
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, delay)
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /**
@@ -122,25 +160,35 @@ export async function requestWithPolicy(
       controller.abort()
     }, timeoutMs)
 
+    let retry = false
     try {
       const response = await fetchImpl(url, { ...init, method: 'GET', signal: controller.signal })
-      if (RETRYABLE_HTTP_STATUSES.has(response.status) && attempt < maxAttempts) continue
-      if (!response.ok) throw new ApiUnavailableError(`Read-only observation API returned HTTP ${response.status}`, 'http', response.status)
-      return response
+      if (RETRYABLE_HTTP_STATUSES.has(response.status) && attempt < maxAttempts) {
+        retry = true
+      } else {
+        if (!response.ok) throw new ApiUnavailableError(`Read-only observation API returned HTTP ${response.status}`, 'http', response.status)
+        return response
+      }
     } catch (error) {
       if (options.signal?.aborted && !timedOut) throw new ApiCancelledError()
       if (timedOut || isAbortError(error)) {
-        if (attempt < maxAttempts) continue
-        throw new ApiTimeoutError()
+        if (attempt >= maxAttempts) throw new ApiTimeoutError()
+        retry = true
+      } else if (error instanceof ApiUnavailableError && error.category === 'http') {
+        throw error
+      } else if (error instanceof ApiResponseError || error instanceof UnsupportedApiVersionError) {
+        throw error
+      } else if (attempt < maxAttempts && isRetryableTransport(error)) {
+        retry = true
+      } else {
+        throw new ApiUnavailableError(error instanceof Error ? error.message : 'Network request failed')
       }
-      if (error instanceof ApiUnavailableError && error.category === 'http') throw error
-      if (error instanceof ApiResponseError || error instanceof UnsupportedApiVersionError) throw error
-      if (attempt < maxAttempts && isRetryableTransport(error)) continue
-      throw new ApiUnavailableError(error instanceof Error ? error.message : 'Network request failed')
     } finally {
       clearTimeout(timer)
       options.signal?.removeEventListener('abort', onAbort)
     }
+
+    if (retry) await waitBeforeRetry(options.signal)
   }
 
   throw new ApiUnavailableError('Read-only observation API request failed')

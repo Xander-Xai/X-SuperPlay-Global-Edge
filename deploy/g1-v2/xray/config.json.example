@@ -31,6 +31,13 @@
           "shortIds": [
             "REPLACE_WITH_EXTERNAL_SHORT_ID"
           ]
+        },
+        "sockopt": {
+          "tcpNoDelay": true,
+          "tcpKeepAliveIdle": 45,
+          "tcpKeepAliveInterval": 15,
+          "tcpUserTimeout": 10000,
+          "tcpMptcp": false
         }
       }
     }
@@ -38,7 +45,10 @@
   "outbounds": [
     {
       "protocol": "freedom",
-      "tag": "direct"
+      "tag": "direct",
+      "settings": {
+        "domainStrategy": "UseIPv4"
+      }
     },
     {
       "protocol": "blackhole",
@@ -46,7 +56,7 @@
     }
   ],
   "routing": {
-    "domainStrategy": "AsIs",
+    "domainStrategy": "UseIPv4",
     "rules": [
       {
         "type": "field",

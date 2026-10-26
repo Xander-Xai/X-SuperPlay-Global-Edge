@@ -22,6 +22,7 @@ from routes.node import (
     get_services,
     get_status,
 )
+from runtime.collector import RuntimeStateCollector
 from metrics.prometheus import render_metrics
 
 
@@ -65,6 +66,28 @@ def _metrics(repository, identity):
     return render_metrics(repository, identity)
 
 
+def _node_snapshot(repository, identity):
+    """Serve every dashboard resource in one response.
+
+    A cross-border client otherwise pays one round trip per resource, and the
+    dashboard needs nine of them. The payload is assembled from the same
+    read-only collectors the individual routes use.
+    """
+
+    node_id = identity.identity().node_id
+    payloads = RuntimeStateCollector(repository, node_id=node_id).collect_payloads()
+    return {
+        **payloads,
+        "identity": get_identity(identity),
+        "capabilities": get_capabilities(identity),
+        "metadata": get_metadata(identity),
+        "health_current": get_current(repository),
+        "health_history": get_history(repository),
+        "events": get_events(repository),
+        "metrics_text": render_metrics(repository, identity),
+    }
+
+
 ROUTES = {
     "/api/v1/health/current": _health_current,
     "/api/v1/health/history": _health_history,
@@ -75,6 +98,7 @@ ROUTES = {
     "/api/v1/node/identity": _identity,
     "/api/v1/node/capabilities": _capabilities,
     "/api/v1/node/metadata": _metadata,
+    "/api/v1/node/snapshot": _node_snapshot,
     "/metrics": _metrics,
 }
 

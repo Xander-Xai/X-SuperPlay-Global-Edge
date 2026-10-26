@@ -1,6 +1,6 @@
 export type BackendStatus = 'healthy' | 'degraded' | 'unknown'
 export type { ClientApiState, ErrorCategory, ObservationFreshness } from './resilience'
-import type { ClientApiState, ErrorCategory, ObservationFreshness } from './resilience'
+import type { ClientApiState, ErrorCategory, ObservationFreshness, RequestBudget } from './resilience'
 export type DisplayHealthState =
   | 'healthy'
   | 'warning'
@@ -98,16 +98,35 @@ export interface EventsResponse {
 export type PrometheusMetrics = Record<string, number>
 
 export interface EdgeApiClient {
-  getNodeStatus(signal?: AbortSignal): Promise<NodeStatusResponse>
-  getNodeIdentity(signal?: AbortSignal): Promise<NodeIdentityResponse>
-  getNodeServices(signal?: AbortSignal): Promise<NodeServicesResponse>
-  getNodeConnection(signal?: AbortSignal): Promise<NodeConnectionResponse>
-  getNodeCapabilities(signal?: AbortSignal): Promise<NodeCapabilitiesResponse>
-  getNodeMetadata(signal?: AbortSignal): Promise<NodeMetadataResponse>
-  getHealthCurrent(signal?: AbortSignal): Promise<HealthCurrentResponse>
-  getHealthHistory(signal?: AbortSignal): Promise<HealthHistoryResponse>
-  getEvents(signal?: AbortSignal): Promise<EventsResponse>
-  getMetrics(signal?: AbortSignal): Promise<PrometheusMetrics>
+  getNodeStatus(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeStatusResponse>
+  getNodeIdentity(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeIdentityResponse>
+  getNodeServices(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeServicesResponse>
+  getNodeConnection(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeConnectionResponse>
+  getNodeCapabilities(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeCapabilitiesResponse>
+  getNodeMetadata(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeMetadataResponse>
+  getHealthCurrent(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthCurrentResponse>
+  getHealthHistory(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthHistoryResponse>
+  getEvents(signal?: AbortSignal, budget?: RequestBudget): Promise<EventsResponse>
+  getMetrics(signal?: AbortSignal, budget?: RequestBudget): Promise<PrometheusMetrics>
+  /**
+   * Optional single-round-trip aggregate of every dashboard resource. Clients
+   * that do not implement it keep using the per-resource endpoints.
+   */
+  getNodeSnapshotAggregate?(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeAggregateResponse>
+}
+
+/** One server response that carries every dashboard resource. */
+export interface NodeAggregateResponse {
+  status: NodeStatusResponse
+  identity: NodeIdentityResponse
+  services: NodeServicesResponse
+  connection: NodeConnectionResponse
+  capabilities: NodeCapabilitiesResponse
+  metadata: NodeMetadataResponse
+  health_current: HealthCurrentResponse
+  health_history: HealthHistoryResponse
+  events: EventsResponse
+  metrics_text: string
 }
 
 export interface DashboardSnapshot {

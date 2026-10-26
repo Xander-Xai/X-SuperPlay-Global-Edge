@@ -7,6 +7,7 @@ import type {
   EventsResponse,
   HealthCurrentResponse,
   HealthHistoryResponse,
+  NodeAggregateResponse,
   NodeCapabilitiesResponse,
   NodeConnectionResponse,
   NodeIdentityResponse,
@@ -25,10 +26,13 @@ import {
   ApiUnavailableError,
   DEFAULT_MAX_ATTEMPTS,
   DEFAULT_TIMEOUT_MS,
+  OPTIONAL_MAX_ATTEMPTS,
+  OPTIONAL_TIMEOUT_MS,
   assertSupportedApiVersion,
   observationFreshness,
   requestWithPolicy,
   validateContentType,
+  type RequestBudget,
   type RequestPolicyOptions,
 } from './resilience'
 
@@ -187,6 +191,28 @@ function isEventsResponse(value: Record<string, unknown>): boolean {
     (value.error === undefined || isString(value.error))
 }
 
+function isNodeAggregateResponse(value: Record<string, unknown>): boolean {
+  const status = value.status
+  const identity = value.identity
+  const services = value.services
+  const connection = value.connection
+  const capabilities = value.capabilities
+  const metadata = value.metadata
+  const healthCurrent = value.health_current
+  const healthHistory = value.health_history
+  const events = value.events
+  return isRecord(status) && isNodeStatusResponse(status) &&
+    isRecord(identity) && isNodeIdentityResponse(identity) &&
+    isRecord(services) && isNodeServicesResponse(services) &&
+    isRecord(connection) && isNodeConnectionResponse(connection) &&
+    isRecord(capabilities) && isNodeCapabilitiesResponse(capabilities) &&
+    isRecord(metadata) && isNodeMetadataResponse(metadata) &&
+    isRecord(healthCurrent) && isHealthCurrentResponse(healthCurrent) &&
+    isRecord(healthHistory) && isHealthHistoryResponse(healthHistory) &&
+    isRecord(events) && isEventsResponse(events) &&
+    isString(value.metrics_text)
+}
+
 function parseJson<T>(value: unknown, resource: string, validator?: JsonValidator<T>): T {
   assertRecord(value, resource)
   if (validator && !validator(value)) throw new ApiResponseError(`${resource} response failed schema validation`)
@@ -215,9 +241,15 @@ function normalizeUrl(baseUrl: string): string {
 
 export interface HttpEdgeApiClientOptions extends RequestPolicyOptions {}
 
+const OPTIONAL_BUDGET: RequestBudget = {
+  timeoutMs: OPTIONAL_TIMEOUT_MS,
+  maxAttempts: OPTIONAL_MAX_ATTEMPTS,
+}
+
 export class HttpEdgeApiClient implements EdgeApiClient {
   private readonly baseUrl: string
   private readonly policy: HttpEdgeApiClientOptions
+  private aggregateSupported: boolean | null = null
 
   constructor(baseUrl: string, options: HttpEdgeApiClientOptions = {}) {
     this.baseUrl = normalizeUrl(baseUrl)
@@ -228,11 +260,16 @@ export class HttpEdgeApiClient implements EdgeApiClient {
     }
   }
 
-  private async requestJson<T>(path: string, validator?: JsonValidator<T>, signal?: AbortSignal): Promise<T> {
+  private async requestJson<T>(
+    path: string,
+    validator?: JsonValidator<T>,
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<T> {
     const response = await requestWithPolicy(`${this.baseUrl}${path}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
-    }, { ...this.policy, signal })
+    }, { ...this.policy, ...budget, signal })
     validateContentType(response, 'json', path)
     let payload: unknown
     try {
@@ -243,55 +280,81 @@ export class HttpEdgeApiClient implements EdgeApiClient {
     return parseJson<T>(payload, path, validator)
   }
 
-  private async requestText(path: string, signal?: AbortSignal): Promise<string> {
+  private async requestText(path: string, signal?: AbortSignal, budget?: RequestBudget): Promise<string> {
     const response = await requestWithPolicy(`${this.baseUrl}${path}`, {
       method: 'GET',
       headers: { Accept: 'text/plain; version=0.0.4' },
-    }, { ...this.policy, signal })
+    }, { ...this.policy, ...budget, signal })
     validateContentType(response, 'text', path)
     return response.text()
   }
 
-  getNodeStatus(signal?: AbortSignal): Promise<NodeStatusResponse> {
-    return this.requestJson<NodeStatusResponse>('/api/v1/node/status', isNodeStatusResponse, signal)
+  getNodeStatus(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeStatusResponse> {
+    return this.requestJson<NodeStatusResponse>('/api/v1/node/status', isNodeStatusResponse, signal, budget)
   }
 
-  getNodeIdentity(signal?: AbortSignal): Promise<NodeIdentityResponse> {
-    return this.requestJson<NodeIdentityResponse>('/api/v1/node/identity', isNodeIdentityResponse, signal)
+  getNodeIdentity(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeIdentityResponse> {
+    return this.requestJson<NodeIdentityResponse>('/api/v1/node/identity', isNodeIdentityResponse, signal, budget)
   }
 
-  getNodeServices(signal?: AbortSignal): Promise<NodeServicesResponse> {
-    return this.requestJson<NodeServicesResponse>('/api/v1/node/services', isNodeServicesResponse, signal)
+  getNodeServices(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeServicesResponse> {
+    return this.requestJson<NodeServicesResponse>('/api/v1/node/services', isNodeServicesResponse, signal, budget)
   }
 
-  getNodeConnection(signal?: AbortSignal): Promise<NodeConnectionResponse> {
-    return this.requestJson<NodeConnectionResponse>('/api/v1/node/connection', isNodeConnectionResponse, signal)
+  getNodeConnection(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeConnectionResponse> {
+    return this.requestJson<NodeConnectionResponse>('/api/v1/node/connection', isNodeConnectionResponse, signal, budget)
   }
 
-  getNodeCapabilities(signal?: AbortSignal): Promise<NodeCapabilitiesResponse> {
-    return this.requestJson<NodeCapabilitiesResponse>('/api/v1/node/capabilities', isNodeCapabilitiesResponse, signal)
+  getNodeCapabilities(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeCapabilitiesResponse> {
+    return this.requestJson<NodeCapabilitiesResponse>('/api/v1/node/capabilities', isNodeCapabilitiesResponse, signal, budget)
   }
 
-  async getNodeMetadata(signal?: AbortSignal): Promise<NodeMetadataResponse> {
-    const metadata = await this.requestJson<NodeMetadataResponse>('/api/v1/node/metadata', isNodeMetadataResponse, signal)
+  async getNodeMetadata(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeMetadataResponse> {
+    const metadata = await this.requestJson<NodeMetadataResponse>('/api/v1/node/metadata', isNodeMetadataResponse, signal, budget)
     assertSupportedApiVersion(metadata.api_version)
     return metadata
   }
 
-  getHealthCurrent(signal?: AbortSignal): Promise<HealthCurrentResponse> {
-    return this.requestJson<HealthCurrentResponse>('/api/v1/health/current', isHealthCurrentResponse, signal)
+  getHealthCurrent(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthCurrentResponse> {
+    return this.requestJson<HealthCurrentResponse>('/api/v1/health/current', isHealthCurrentResponse, signal, budget)
   }
 
-  getHealthHistory(signal?: AbortSignal): Promise<HealthHistoryResponse> {
-    return this.requestJson<HealthHistoryResponse>('/api/v1/health/history', isHealthHistoryResponse, signal)
+  getHealthHistory(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthHistoryResponse> {
+    return this.requestJson<HealthHistoryResponse>('/api/v1/health/history', isHealthHistoryResponse, signal, budget)
   }
 
-  getEvents(signal?: AbortSignal): Promise<EventsResponse> {
-    return this.requestJson<EventsResponse>('/api/v1/events', isEventsResponse, signal)
+  getEvents(signal?: AbortSignal, budget?: RequestBudget): Promise<EventsResponse> {
+    return this.requestJson<EventsResponse>('/api/v1/events', isEventsResponse, signal, budget)
   }
 
-  async getMetrics(signal?: AbortSignal): Promise<PrometheusMetrics> {
-    return parsePrometheusMetrics(await this.requestText('/metrics', signal))
+  async getMetrics(signal?: AbortSignal, budget?: RequestBudget): Promise<PrometheusMetrics> {
+    return parsePrometheusMetrics(await this.requestText('/metrics', signal, budget))
+  }
+
+  /**
+   * One round trip for every dashboard resource. Older servers do not expose
+   * this route; the negative result is remembered so the panel stops paying
+   * for a request that can never succeed.
+   */
+  async getNodeSnapshotAggregate(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeAggregateResponse> {
+    if (this.aggregateSupported === false) {
+      throw new ApiUnavailableError('Aggregate snapshot route is not served by this API version', 'http', 404)
+    }
+    try {
+      const aggregate = await this.requestJson<NodeAggregateResponse>(
+        '/api/v1/node/snapshot',
+        isNodeAggregateResponse,
+        signal,
+        budget ?? OPTIONAL_BUDGET,
+      )
+      this.aggregateSupported = true
+      return aggregate
+    } catch (error) {
+      if (error instanceof ApiUnavailableError && (error.status === 404 || error.status === 405)) {
+        this.aggregateSupported = false
+      }
+      throw error
+    }
   }
 }
 
@@ -340,39 +403,118 @@ function fallbackMetrics(): PrometheusMetrics {
   return Object.fromEntries(requiredMetricNames.map((name) => [name, Number.NaN]))
 }
 
-async function optionalResource<T>(
-  name: string,
-  request: Promise<T>,
-  fallback: T,
-  errors: string[],
-): Promise<T> {
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+/**
+ * Turn a request into a settled outcome so a failing optional resource never
+ * rejects the batch that contains it.
+ */
+function settle<T>(request: () => Promise<T>): Promise<Settled<T>> {
   try {
-    return await request
+    return request().then(
+      (value) => ({ ok: true as const, value }),
+      (error) => ({ ok: false as const, error }),
+    )
+  } catch (error) {
+    return Promise.resolve({ ok: false as const, error })
+  }
+}
+
+function unwrap<T>(name: string, settled: Settled<T>, fallback: () => T, errors: string[]): T {
+  if (settled.ok) return settled.value
+  if (settled.error instanceof ApiCancelledError) throw settled.error
+  errors.push(`${name}:${settled.error instanceof Error ? settled.error.name : 'error'}`)
+  return fallback()
+}
+
+/**
+ * Prefer the single-round-trip aggregate when the server exposes it. A server
+ * that does not serve the route, or an aggregate that fails, falls back to the
+ * per-resource endpoints instead of breaking the view.
+ */
+async function loadAggregate(
+  client: EdgeApiClient,
+  options: { signal?: AbortSignal; budget?: RequestBudget },
+): Promise<NodeAggregateResponse | null> {
+  const getAggregate = client.getNodeSnapshotAggregate?.bind(client)
+  if (!getAggregate) return null
+  try {
+    // The aggregate is an optimisation, so it never gets a second attempt and
+    // never gets the long default budget: failing fast falls back to the
+    // per-resource endpoints instead of stalling the view.
+    return await getAggregate(options.signal, OPTIONAL_BUDGET)
   } catch (error) {
     if (error instanceof ApiCancelledError) throw error
-    errors.push(`${name}:${error instanceof Error ? error.name : 'error'}`)
-    return fallback
+    return null
+  }
+}
+
+function dashboardSnapshotFromAggregate(
+  aggregate: NodeAggregateResponse,
+  nowValue?: number,
+): DashboardSnapshot {
+  const resourceErrors: string[] = []
+  let metrics: PrometheusMetrics
+  try {
+    metrics = parsePrometheusMetrics(aggregate.metrics_text)
+  } catch (error) {
+    metrics = fallbackMetrics()
+    resourceErrors.push(`metrics:${error instanceof Error ? error.name : 'error'}`)
+  }
+  const now = nowValue ?? Date.now()
+  const sourceTimestamp = aggregate.status.timestamp ?? aggregate.health_current.timestamp
+  const freshness = observationFreshness(sourceTimestamp, now)
+  return {
+    state: statusFromPayload(aggregate.status.overall_status, aggregate.events),
+    nodeId: aggregate.identity.node_id,
+    region: aggregate.identity.region,
+    provider: aggregate.identity.provider,
+    healthScore: aggregate.status.health_score ?? aggregate.health_current.health_score,
+    connectionState: aggregate.connection.connection_state,
+    protocol: aggregate.connection.protocol,
+    services: aggregate.services.services,
+    p50LatencyMs: metricValue(metrics, 'x_superplay_latency_p50_ms'),
+    p95LatencyMs: metricValue(metrics, 'x_superplay_latency_p95_ms') ?? aggregate.health_history.latency_percentiles.p95,
+    httpSuccessRate: metricValue(metrics, 'x_superplay_http_success_rate') ?? aggregate.health_history.availability,
+    alertCount: metricValue(metrics, 'x_superplay_alert_count') ?? aggregate.events.events.length,
+    timestamp: sourceTimestamp,
+    corruptedEvidenceCount: Math.max(aggregate.status.corrupted_evidence_count, aggregate.health_current.corrupted_evidence_count),
+    freshness: freshness.freshness,
+    sourceTimestamp,
+    receivedAt: new Date(now).toISOString(),
+    ageMs: freshness.ageMs,
+    clientState: 'normal',
+    apiVersion: aggregate.metadata.api_version,
+    resourceErrors,
+    lastErrorCategory: null,
   }
 }
 
 export async function loadDashboardSnapshot(
   client: EdgeApiClient,
-  options: { signal?: AbortSignal; now?: number } = {},
+  options: { signal?: AbortSignal; now?: number; budget?: RequestBudget } = {},
 ): Promise<DashboardSnapshot> {
-  const [status, identity, current, metadata] = await Promise.all([
-    client.getNodeStatus(options.signal),
-    client.getNodeIdentity(options.signal),
-    client.getHealthCurrent(options.signal),
-    client.getNodeMetadata(options.signal),
-  ])
+  const aggregate = await loadAggregate(client, options)
+  if (aggregate) return dashboardSnapshotFromAggregate(aggregate, options.now)
+
   const resourceErrors: string[] = []
-  const [services, connection, history, events, metrics] = await Promise.all([
-    optionalResource('services', client.getNodeServices(options.signal), fallbackServices(status), resourceErrors),
-    optionalResource('connection', client.getNodeConnection(options.signal), fallbackConnection(status), resourceErrors),
-    optionalResource('history', client.getHealthHistory(options.signal), fallbackHistory(), resourceErrors),
-    optionalResource('events', client.getEvents(options.signal), fallbackEvents(), resourceErrors),
-    optionalResource('metrics', client.getMetrics(options.signal), fallbackMetrics(), resourceErrors),
+  const servicesRequest = settle(() => client.getNodeServices(options.signal, OPTIONAL_BUDGET))
+  const connectionRequest = settle(() => client.getNodeConnection(options.signal, OPTIONAL_BUDGET))
+  const historyRequest = settle(() => client.getHealthHistory(options.signal, OPTIONAL_BUDGET))
+  const eventsRequest = settle(() => client.getEvents(options.signal, OPTIONAL_BUDGET))
+  const metricsRequest = settle(() => client.getMetrics(options.signal, OPTIONAL_BUDGET))
+
+  const [status, identity, current, metadata] = await Promise.all([
+    client.getNodeStatus(options.signal, options.budget),
+    client.getNodeIdentity(options.signal, options.budget),
+    client.getHealthCurrent(options.signal, options.budget),
+    client.getNodeMetadata(options.signal, options.budget),
   ])
+  const services = unwrap('services', await servicesRequest, () => fallbackServices(status), resourceErrors)
+  const connection = unwrap('connection', await connectionRequest, () => fallbackConnection(status), resourceErrors)
+  const history = unwrap('history', await historyRequest, fallbackHistory, resourceErrors)
+  const events = unwrap('events', await eventsRequest, fallbackEvents, resourceErrors)
+  const metrics = unwrap('metrics', await metricsRequest, fallbackMetrics, resourceErrors)
   const now = options.now ?? Date.now()
   const sourceTimestamp = status.timestamp ?? current.timestamp
   const freshness = observationFreshness(sourceTimestamp, now)
@@ -424,19 +566,41 @@ function fallbackCapabilities(): NodeCapabilitiesResponse {
 
 export async function loadNodeSnapshot(
   client: EdgeApiClient,
-  options: { signal?: AbortSignal; now?: number } = {},
+  options: { signal?: AbortSignal; now?: number; budget?: RequestBudget } = {},
 ): Promise<NodeSnapshot> {
-  const [status, identity, metadata] = await Promise.all([
-    client.getNodeStatus(options.signal),
-    client.getNodeIdentity(options.signal),
-    client.getNodeMetadata(options.signal),
-  ])
+  const aggregate = await loadAggregate(client, options)
+  if (aggregate) {
+    const now = options.now ?? Date.now()
+    const aggregateFreshness = observationFreshness(aggregate.status.timestamp, now)
+    return {
+      status: aggregate.status,
+      identity: aggregate.identity,
+      capabilities: aggregate.capabilities,
+      metadata: aggregate.metadata,
+      services: aggregate.services,
+      connection: aggregate.connection,
+      freshness: aggregateFreshness.freshness,
+      sourceTimestamp: aggregate.status.timestamp,
+      receivedAt: new Date(now).toISOString(),
+      ageMs: aggregateFreshness.ageMs,
+      clientState: 'normal' as const,
+      resourceErrors: [],
+      lastErrorCategory: null,
+    }
+  }
+
   const resourceErrors: string[] = []
-  const [capabilities, services, connection] = await Promise.all([
-    optionalResource('capabilities', client.getNodeCapabilities(options.signal), fallbackCapabilities(), resourceErrors),
-    optionalResource('services', client.getNodeServices(options.signal), fallbackServices(status), resourceErrors),
-    optionalResource('connection', client.getNodeConnection(options.signal), fallbackConnection(status), resourceErrors),
+  const capabilitiesRequest = settle(() => client.getNodeCapabilities(options.signal, OPTIONAL_BUDGET))
+  const servicesRequest = settle(() => client.getNodeServices(options.signal, OPTIONAL_BUDGET))
+  const connectionRequest = settle(() => client.getNodeConnection(options.signal, OPTIONAL_BUDGET))
+  const [status, identity, metadata] = await Promise.all([
+    client.getNodeStatus(options.signal, options.budget),
+    client.getNodeIdentity(options.signal, options.budget),
+    client.getNodeMetadata(options.signal, options.budget),
   ])
+  const capabilities = unwrap('capabilities', await capabilitiesRequest, fallbackCapabilities, resourceErrors)
+  const services = unwrap('services', await servicesRequest, () => fallbackServices(status), resourceErrors)
+  const connection = unwrap('connection', await connectionRequest, () => fallbackConnection(status), resourceErrors)
   const now = options.now ?? Date.now()
   const sourceTimestamp = status.timestamp
   const freshness = observationFreshness(sourceTimestamp, now)
