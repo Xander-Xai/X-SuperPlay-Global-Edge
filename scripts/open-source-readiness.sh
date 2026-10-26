@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 root = Path(os.environ["ROOT_DIR"])
-skip_dirs = {".git", "node_modules", "target", "dist", "build", "coverage", ".temp", ".workbuddy", "reports"}
+skip_dirs = {".git", "node_modules", "target", "dist", "build", "coverage", ".temp", ".workbuddy", "reports", ".pytest_cache", "__pycache__", ".venv", "venv", "gen"}
 skip_files = {"open-source-readiness.sh", "OPEN_SOURCE_AUDIT.md", "OPEN_SOURCE_READINESS.md"}
 ipv4_re = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 escaped_ipv4_re = re.compile(

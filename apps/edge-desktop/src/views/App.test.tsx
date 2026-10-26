@@ -95,6 +95,34 @@ describe('desktop MVP views', () => {
     expect(screen.getByText(/latest request: transport/)).toBeInTheDocument()
   })
 
+  it('keeps the previous dashboard on screen while a refresh is still in flight', async () => {
+    let releaseRefresh!: () => void
+    const gate = new Promise<void>((resolve) => { releaseRefresh = resolve })
+    class SlowRefreshClient extends MockEdgeApiClient {
+      private statusCalls = 0
+
+      override async getNodeStatus(signal?: AbortSignal): Promise<NodeStatusResponse> {
+        this.statusCalls += 1
+        if (this.statusCalls === 1) return super.getNodeStatus(signal)
+        await gate
+        return super.getNodeStatus(signal)
+      }
+    }
+    const client = new SlowRefreshClient('healthy')
+    render(<App client={client} />)
+    await waitFor(() => expect(screen.getByText('Edge overview')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh evidence' }))
+
+    expect(screen.getByText('Edge overview')).toBeInTheDocument()
+    expect(screen.queryByText('Loading evidence snapshot…')).not.toBeInTheDocument()
+    expect(screen.getByText('Refreshing evidence…')).toBeInTheDocument()
+
+    releaseRefresh()
+    await waitFor(() => expect(screen.queryByText('Refreshing evidence…')).not.toBeInTheDocument())
+    expect(screen.getByText('Edge overview')).toBeInTheDocument()
+  })
+
   it('prevents an older refresh response from overwriting a newer one', async () => {
     let releaseFirst!: () => void
     let statusCalls = 0

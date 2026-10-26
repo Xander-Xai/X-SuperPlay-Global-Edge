@@ -37,9 +37,11 @@ nav { display: grid; gap: 5px; }
 .build-sha { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4f637c; }
 .main-canvas { min-width: 0; flex: 1; }
 .topbar { height: 70px; padding: 0 42px; display: flex; align-items: center; justify-content: space-between; color: #8da1ba; border-bottom: 1px solid var(--line); font-size: 12px; letter-spacing: .05em; }
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.refresh-indicator { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
 .refresh-button, .secondary-button { padding: 8px 13px; color: #bcdcff; border: 1px solid rgba(103,180,255,.28); border-radius: 7px; background: rgba(103,180,255,.08); cursor: pointer; }
 .refresh-button:hover, .secondary-button:hover { background: rgba(103,180,255,.16); }
-.content-wrap { max-width: 1100px; margin: 0 auto; padding: 42px 42px 60px; }
+.content-wrap { max-width: 1100px; min-height: 420px; margin: 0 auto; padding: 42px 42px 60px; }
 .observation-notice { display: grid; gap: 4px; margin-bottom: 22px; padding: 12px 14px; border: 1px solid rgba(157,184,215,.2); border-radius: 8px; color: #b9c9da; background: rgba(157,184,215,.06); font-size: 12px; }
 .observation-notice strong { letter-spacing: .08em; font-size: 10px; }
 .observation-notice small { color: #8296ad; }
@@ -87,6 +89,9 @@ h2 { margin-bottom: 7px; color: #f3f8ff; font-size: 19px; letter-spacing: -.02em
 .service-good { color: var(--green); }
 .service-muted { color: #97a8bb; }
 .footnote { margin: -9px 0 0; color: #62768e; font-size: 10px; }
+/* The negative offset above pulls the dashboard footnote toward its panel; inside
+   a panel it would overlap the last row instead. */
+.panel > .footnote { margin-top: 6px; }
 .event-count { color: #f8ca70; background: rgba(248,202,112,.1); }
 .event-list { display: grid; gap: 12px; }
 .event-card { padding: 20px; border: 1px solid var(--line); border-left: 3px solid var(--yellow); border-radius: 10px; background: rgba(13,27,45,.72); }

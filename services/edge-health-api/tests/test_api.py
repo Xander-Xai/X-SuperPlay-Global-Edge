@@ -168,6 +168,47 @@ class ApiTests(unittest.TestCase):
             urlopen(request, timeout=2)
         self.assertIn("HTTP Error 405", str(raised.exception))
 
+    def test_aggregate_snapshot_returns_every_resource_in_one_response(self):
+        self.store.write(make_evidence())
+        status, payload = self.get("/api/v1/node/snapshot")
+        self.assertEqual(status, 200)
+        for key in (
+            "status",
+            "identity",
+            "services",
+            "connection",
+            "capabilities",
+            "metadata",
+            "health_current",
+            "health_history",
+            "events",
+            "metrics_text",
+        ):
+            self.assertIn(key, payload)
+        self.assertEqual(payload["status"]["node_id"], payload["identity"]["node_id"])
+        self.assertEqual(payload["metadata"]["api_version"], "v1")
+        self.assertIn("x_superplay_health_score", payload["metrics_text"])
+
+    def test_aggregate_snapshot_matches_the_individual_routes(self):
+        self.store.write(make_evidence())
+        _, aggregate = self.get("/api/v1/node/snapshot")
+        _, status = self.get("/api/v1/node/status")
+        _, identity = self.get("/api/v1/node/identity")
+        _, current = self.get("/api/v1/health/current")
+        _, history = self.get("/api/v1/health/history")
+        _, events = self.get("/api/v1/events")
+        self.assertEqual(aggregate["status"], status)
+        self.assertEqual(aggregate["identity"], identity)
+        self.assertEqual(aggregate["health_current"], current)
+        # The history summary carries its own generation timestamp, so only the
+        # stable derived values are comparable across two calls.
+        self.assertEqual(aggregate["health_history"]["availability"], history["availability"])
+        self.assertEqual(
+            aggregate["health_history"]["latency_percentiles"],
+            history["latency_percentiles"],
+        )
+        self.assertEqual(aggregate["events"], events)
+
 
 if __name__ == "__main__":
     unittest.main()
