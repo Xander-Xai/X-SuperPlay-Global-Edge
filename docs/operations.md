@@ -45,3 +45,50 @@ bash scripts/g1-v2-failover.sh --yes \
 
 The command is not run by CI and is not a substitute for independent SSH,
 WireGuard-admin and VPS reboot checks.
+
+## 延迟改造的证据门槛
+
+跨境链路上的内核调优、协议切换和路径变更都必须先有基线证据。先采集 T0：
+
+```bash
+bash scripts/g1-v2-server-state.sh .temp/server-state-T0.json T0
+bash scripts/edge-path-diagnose.sh <EDGE_HOST> 5201 15
+```
+
+基线必须覆盖两个时间窗（本地时间 14:00–16:00 与 20:00–23:00），否则晚高峰的
+丢包与抖动无法与日常值区分。采集完成后才允许应用数据面调优：
+
+```bash
+# 查看现状与证据门槛（不改动主机）
+bash scripts/data-plane-sysctl.sh --check .env
+
+# 应用。拒绝执行的条件：.env 中 EDGE_SYSCTL_ACK 不为 1，或没有 24 小时内的 T0 证据
+bash scripts/data-plane-sysctl.sh --apply .env
+
+# 回滚到 --apply 前的取值
+bash scripts/data-plane-sysctl.sh --rollback .env
+```
+
+`deploy/sysctl/edge-2c2g-30m.sysctl` 的取值按 2 vCPU / 2GB / 30Mbps 主机定值：
+30Mbps、150ms RTT 的带宽时延积约 576KB，4MB 套接字缓冲区约 7 倍余量。不要在
+2GB 主机上继续放大缓冲上限。`EDGE_ENABLE_CAKE=1` 只在实测到 bufferbloat
+（空闲 RTT 正常、满载 RTT 飙升）时才启用。
+
+调优后必须在同一时间窗复测，比较 `rtt_p95`、TCP 单流吞吐、UDP 丢包与 SSH 交互
+手感；`udp_receive_errors`、`nic_rx_drops`、softnet drop 不得上升，CPU 不得持续
+超过 80%。不要用 ICMP RTT 与 HTTPS 总耗时互相比较。
+
+## 客户端选路
+
+`client/mihomo/config.yaml.example` 是传输验证用的 canary：固定顺序、`REJECT`
+兜底、不启用 TUN，不要为了"更快"修改它的语义。
+
+日常使用复制 `client/mihomo/config.low-latency.yaml.example`：按实测延迟选路、
+国内流量 `DIRECT`、fake-ip DNS、TUN 抓包。两个 profile 不要同时生效，也不要与
+全隧道 WireGuard profile 同时启用。
+
+## 观察面板
+
+面板在刷新时保留上一次的内容，不会整屏空白；后台轮询使用更短的超时预算。
+`/api/v1/node/snapshot` 是把全部观察资源合并成一次往返的只读端点，旧版服务端
+不提供该路由时客户端会自动回退到逐资源请求。

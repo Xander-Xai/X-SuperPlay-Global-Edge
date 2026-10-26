@@ -15,3 +15,18 @@ masquerade:
   proxy:
     url: https://www.cloudflare.com/
     rewriteHost: true
+
+# QUIC receive windows. 4 MB is roughly 7x the bandwidth-delay product of a
+# 30 Mbps link at ~150 ms RTT, which absorbs a cross-border loss burst
+# without letting one stream grow unbounded on a 2 GB host. Do not raise
+# these further here.
+quic:
+  initStreamReceiveWindow: 4194304
+  maxStreamReceiveWindow: 4194304
+  initConnReceiveWindow: 8388608
+  maxConnReceiveWindow: 8388608
+  maxIdleTimeout: 30s
+  # Keeps the UDP NAT mapping alive so an idle client does not pay a fresh
+  # handshake after a pause.
+  keepAlivePeriod: 10s
+  disablePathMTUDiscovery: false

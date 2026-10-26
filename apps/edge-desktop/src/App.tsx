@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiCancelledError,
   ApiResponseError,
@@ -11,8 +11,10 @@ import {
   markDashboardSnapshotFailed,
   markNodeSnapshotFailed,
   POLL_INTERVAL_MS,
+  POLL_MAX_ATTEMPTS,
+  POLL_TIMEOUT_MS,
 } from './api'
-import type { ClientApiState, DashboardSnapshot, EdgeApiClient, EventsResponse, NodeSnapshot } from './api'
+import type { ClientApiState, DashboardSnapshot, EdgeApiClient, EventsResponse, NodeSnapshot, RequestBudget } from './api'
 import { DashboardView } from './views/Dashboard'
 import { EventsView } from './views/Events'
 import { NodeView } from './views/Node'
@@ -77,6 +79,9 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
   const [events, setEvents] = useState<EventsResponse | null>(null)
   const [node, setNode] = useState<NodeSnapshot | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
+  // Background polling uses a tighter budget than a user-initiated refresh so a
+  // poll never holds the cross-border link for the full default timeout.
+  const pollTriggeredRef = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -84,22 +89,29 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
     let pollTimer: ReturnType<typeof setTimeout> | undefined
     setLoading(true)
     setError(null)
+    const budget: RequestBudget | undefined = pollTriggeredRef.current
+      ? { timeoutMs: POLL_TIMEOUT_MS, maxAttempts: POLL_MAX_ATTEMPTS }
+      : undefined
+    pollTriggeredRef.current = false
 
     const schedulePoll = () => {
-      if (!cancelled) pollTimer = setTimeout(() => setRefreshToken((value) => value + 1), POLL_INTERVAL_MS)
+      if (!cancelled) pollTimer = setTimeout(() => {
+        pollTriggeredRef.current = true
+        setRefreshToken((value) => value + 1)
+      }, POLL_INTERVAL_MS)
     }
 
     const load = async () => {
       try {
         if (view === 'dashboard') {
-          const result = await loadDashboardSnapshot(client, { signal: controller.signal })
+          const result = await loadDashboardSnapshot(client, { signal: controller.signal, budget })
           if (!cancelled) setDashboard(result)
         } else if (view === 'events') {
-          const result = await client.getEvents(controller.signal)
+          const result = await client.getEvents(controller.signal, budget)
           if (!Array.isArray(result.events)) throw new ApiResponseError('events must be an array')
           if (!cancelled) setEvents(result)
         } else {
-          const result = await loadNodeSnapshot(client, { signal: controller.signal })
+          const result = await loadNodeSnapshot(client, { signal: controller.signal, budget })
           if (!cancelled) setNode(result)
         }
       } catch (loadError) {
@@ -124,6 +136,10 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
 
   const mode = import.meta.env.VITE_EDGE_API_BASE_URL ? 'REAL API' : 'MOCK MODE'
   const cachedView = view === 'dashboard' ? dashboard : view === 'node' ? node : null
+  const retry = () => {
+    pollTriggeredRef.current = false
+    setRefreshToken((value) => value + 1)
+  }
 
   return (
     <div className="app-shell">
@@ -150,15 +166,20 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
       <main className="main-canvas">
         <header className="topbar">
           <span>Edge observation</span>
-          <button className="refresh-button" onClick={() => setRefreshToken((value) => value + 1)} aria-label="Refresh evidence">↻ Refresh</button>
+          <div className="topbar-actions">
+            {loading && cachedView && <span className="refresh-indicator" role="status">Refreshing evidence…</span>}
+            <button className="refresh-button" onClick={retry} aria-label="Refresh evidence">
+              {loading ? '↻ Refreshing…' : '↻ Refresh'}
+            </button>
+          </div>
         </header>
-        <div className="content-wrap">
+        <div className="content-wrap" aria-busy={loading}>
           {loading && !cachedView && <LoadingState />}
-          {!loading && error !== null && !cachedView && <ErrorState error={error} onRetry={() => setRefreshToken((value) => value + 1)} />}
-          {!loading && view === 'dashboard' && dashboard && <><ObservationNotice snapshot={dashboard} /><DashboardView snapshot={dashboard} /></>}
-          {!loading && view === 'events' && events && <EventsView response={events} />}
-          {!loading && view === 'node' && node && <><ObservationNotice snapshot={node} /><NodeView snapshot={node} /></>}
-          {!loading && error !== null && cachedView && <div className="cached-retry"><ErrorState error={error} onRetry={() => setRefreshToken((value) => value + 1)} /></div>}
+          {!loading && error !== null && !cachedView && <ErrorState error={error} onRetry={retry} />}
+          {view === 'dashboard' && dashboard && <><ObservationNotice snapshot={dashboard} /><DashboardView snapshot={dashboard} /></>}
+          {view === 'events' && events && <EventsView response={events} />}
+          {view === 'node' && node && <><ObservationNotice snapshot={node} /><NodeView snapshot={node} /></>}
+          {!loading && error !== null && cachedView && <div className="cached-retry"><ErrorState error={error} onRetry={retry} /></div>}
         </div>
       </main>
     </div>
