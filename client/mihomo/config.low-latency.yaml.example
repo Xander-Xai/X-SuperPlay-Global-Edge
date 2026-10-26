@@ -1,0 +1,154 @@
+# Production profile for the Singapore edge node.
+#
+# This profile is NOT the transport canary. `config.yaml.example` stays the
+# fixed-order, REJECT-only canary used to prove one transport at a time; this
+# file is the everyday profile that adds latency-based selection, direct
+# routing for mainland traffic, and a managed DNS resolver.
+#
+# Replace every REPLACE_WITH_EXTERNAL_* value from the private secret store.
+# Keep the full-tunnel WireGuard profile disconnected while Mihomo TUN capture
+# is enabled: two tunnels on one host is a latency source, not a feature.
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: warning
+ipv6: false
+
+# Unified delay accounting keeps QUIC and TCP comparable inside url-test.
+unified-delay: true
+# Open concurrent connections so one slow handshake does not serialize the page.
+tcp-concurrent: true
+# Reuse upstream connections instead of reconnecting for every request.
+keep-alive-interval: 15
+keep-alive-idle: 600
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+# Recover the domain from SNI/HTTP so rules can match before IP resolution.
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
+  sniff:
+    HTTP: { ports: [80, 8080-8880] }
+    TLS:  { ports: [443, 8443] }
+    QUIC: { ports: [443, 8443] }
+  skip-domain:
+    - "+.push.apple.com"
+
+dns:
+  enable: true
+  listen: 0.0.0.0:1053
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+    - "+.msftconnecttest.com"
+    - "+.msftncsi.com"
+    - "time.windows.com"
+    - "localhost.ptlogin2.qq.com"
+  # default-nameserver only resolves the DoH hostnames below and must be direct.
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+    - https://dns.alidns.com/dns-query
+  # Resolving the proxy server itself must never depend on the tunnel.
+  proxy-server-nameserver:
+    - 223.5.5.5
+    - https://dns.alidns.com/dns-query
+  nameserver-policy:
+    "geosite:cn,private":      [223.5.5.5, 119.29.29.29, https://dns.alidns.com/dns-query]
+    "geosite:geolocation-!cn": [https://1.1.1.1/dns-query, https://8.8.8.8/dns-query]
+
+proxies:
+  - name: REALITY-SG
+    type: vless
+    server: REPLACE_WITH_EXTERNAL_EDGE_HOST
+    port: 443
+    uuid: REPLACE_WITH_EXTERNAL_UUID
+    network: tcp
+    udp: true
+    tls: true
+    servername: www.cloudflare.com
+    flow: xtls-rprx-vision
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: REPLACE_WITH_EXTERNAL_REALITY_PUBLIC_KEY
+      short-id: REPLACE_WITH_EXTERNAL_SHORT_ID
+
+  - name: HY2-SG
+    type: hysteria2
+    server: REPLACE_WITH_EXTERNAL_EDGE_HOST
+    port: 443
+    password: REPLACE_WITH_EXTERNAL_HYSTERIA_PASSWORD
+    sni: REPLACE_WITH_EXTERNAL_HYSTERIA_SNI
+    alpn:
+      - h3
+    skip-cert-verify: false
+    udp: true
+
+proxy-groups:
+  # Selection is decided by measured delay, not by list order. HY2-SG is listed
+  # first only for display; drop it here if the path diagnosis shows the
+  # uplink is UDP-throttled or UDP-lossy.
+  - name: LATENCY-AUTO
+    type: url-test
+    proxies:
+      - HY2-SG
+      - REALITY-SG
+    url: http://www.gstatic.com/generate_204
+    expected-status: 204
+    interval: 300
+    tolerance: 50
+    timeout: 3000
+    lazy: false
+    max-failed-times: 3
+
+  # Fallback over the measured-best group, with a direct Reality fallback in
+  # case the url-test group itself cannot report health.
+  - name: GLOBAL-STABLE
+    type: fallback
+    proxies:
+      - LATENCY-AUTO
+      - REALITY-SG
+    url: http://www.gstatic.com/generate_204
+    expected-status: 204
+    interval: 30
+    timeout: 3000
+    lazy: false
+    max-failed-times: 3
+    empty-fallback: REJECT
+
+rules:
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+  # Mainland destinations stay local; routing them through Singapore is the
+  # single largest avoidable source of latency on this link.
+  - GEOSITE,cn,DIRECT
+  - GEOIP,CN,DIRECT,no-resolve
+  - MATCH,GLOBAL-STABLE
+
+# TUN capture is what makes SSH and non-proxy-aware applications usable.
+# Disconnect the full-tunnel WireGuard profile before enabling it, and never
+# enable udp-over-tcp: it converts packet loss into TCP head-of-line blocking.
+tun:
+  enable: true
+  stack: gvisor
+  auto-route: true
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+  strict-route: true
+  mtu: 1500
