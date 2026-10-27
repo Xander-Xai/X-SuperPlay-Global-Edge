@@ -8,7 +8,6 @@ import subprocess
 import sys
 from pathlib import PurePosixPath
 
-
 FORBIDDEN_PREFIXES = (
     "deploy",
     "runtime",
@@ -32,8 +31,12 @@ ALLOWED_PATHS = {
     "docs/client/monorepo-boundaries.md",
     "docs/client/client-architecture-prd.md",
     "README.md",
+    ".gitattributes",
+    ".github/workflows/ci.yml",
     ".github/workflows/edge-desktop-ci.yml",
     ".github/workflows/edge-desktop-release.yml",
+    "requirements-dev.txt",
+    "ruff.toml",
     "scripts/ci/check-edge-desktop-boundary.py",
 }
 ALLOWED_PREFIXES = (
@@ -74,8 +77,7 @@ def forbidden_reason(path: str) -> str | None:
         if normalized == prefix or normalized.startswith(f"{prefix}/"):
             return f"forbidden production/runtime prefix: {prefix}/"
     allowed_prefix = any(
-        normalized == prefix.rstrip("/") or normalized.startswith(prefix)
-        for prefix in ALLOWED_PREFIXES
+        normalized == prefix.rstrip("/") or normalized.startswith(prefix) for prefix in ALLOWED_PREFIXES
     )
     if normalized not in ALLOWED_PATHS and not allowed_prefix:
         return "outside the P13-002 desktop patch surface"

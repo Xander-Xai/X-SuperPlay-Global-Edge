@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from runtime.models import ConnectionState, RuntimeState, ServiceState
 
@@ -11,10 +12,7 @@ UNAVAILABLE_REASON = "service_state_not_present_in_local_evidence"
 
 
 def _service_states() -> dict[str, ServiceState]:
-    return {
-        name: ServiceState(name=name, status="unavailable", reason=UNAVAILABLE_REASON)
-        for name in SERVICE_NAMES
-    }
+    return {name: ServiceState(name=name, status="unavailable", reason=UNAVAILABLE_REASON) for name in SERVICE_NAMES}
 
 
 def build_runtime_state(

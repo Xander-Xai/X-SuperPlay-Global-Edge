@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import App from '../App'
-import { MockEdgeApiClient } from '../api'
 import type { NodeStatusResponse } from '../api'
+import { MockEdgeApiClient } from '../api'
 
 describe('desktop MVP views', () => {
   it('renders healthy dashboard metrics and services', async () => {
@@ -97,7 +97,9 @@ describe('desktop MVP views', () => {
 
   it('keeps the previous dashboard on screen while a refresh is still in flight', async () => {
     let releaseRefresh!: () => void
-    const gate = new Promise<void>((resolve) => { releaseRefresh = resolve })
+    const gate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
     class SlowRefreshClient extends MockEdgeApiClient {
       private statusCalls = 0
 
@@ -132,7 +134,9 @@ describe('desktop MVP views', () => {
         statusCalls += 1
         if (statusCalls === 1) {
           return new Promise<NodeStatusResponse>((resolve) => {
-            releaseFirst = () => { void oldClient.getNodeStatus(signal).then(resolve) }
+            releaseFirst = () => {
+              void oldClient.getNodeStatus(signal).then(resolve)
+            }
           })
         }
         return super.getNodeStatus(signal)

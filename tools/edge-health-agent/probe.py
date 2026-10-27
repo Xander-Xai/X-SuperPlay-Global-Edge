@@ -14,9 +14,10 @@ import re
 import socket
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
@@ -33,7 +34,7 @@ class ConfigError(ValueError):
 
 
 def utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def duration_ms(start: float) -> float:
@@ -183,7 +184,7 @@ def probe_tcp(host: str, port: int, timeout_seconds: float = 3.0) -> dict[str, A
     try:
         with socket.create_connection((host, port), timeout=timeout_seconds):
             result["success"] = True
-    except (socket.timeout, TimeoutError) as exc:
+    except TimeoutError as exc:
         result["error"] = f"CONNECT_TIMEOUT: {_error_text(exc)}"
     except ConnectionRefusedError as exc:
         result["error"] = f"CONNECTION_REFUSED: {_error_text(exc)}"
@@ -233,7 +234,7 @@ def probe_http_target(
     except HTTPError as exc:
         result["status"] = int(exc.code)
         result["error"] = f"HTTP_STATUS_{exc.code}"
-    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         result["error"] = _error_text(exc)
     finally:
         result["latency_ms"] = duration_ms(started)
@@ -269,9 +270,7 @@ def _extract_ip(body: str) -> str | None:
     return None
 
 
-def probe_egress(
-    config: Mapping[str, Any], timeout_seconds: float = 3.0, opener: Any | None = None
-) -> dict[str, Any]:
+def probe_egress(config: Mapping[str, Any], timeout_seconds: float = 3.0, opener: Any | None = None) -> dict[str, Any]:
     """Query the configured IP echo endpoint, optionally through a proxy."""
 
     enabled = bool(config.get("enabled", False))
@@ -315,7 +314,7 @@ def probe_egress(
                 result["error"] = "EGRESS_IP_MISMATCH"
     except HTTPError as exc:
         result["error"] = f"HTTP_STATUS_{exc.code}"
-    except (URLError, TimeoutError, socket.timeout, OSError) as exc:
+    except (URLError, TimeoutError, OSError) as exc:
         result["error"] = _error_text(exc)
     finally:
         result["latency_ms"] = duration_ms(started)
@@ -350,10 +349,7 @@ def run_probe(config: Mapping[str, Any]) -> dict[str, Any]:
 
     timeout_seconds = float(config["timeout_seconds"])
     tcp = probe_tcp(config["tcp"]["host"], config["tcp"]["port"], timeout_seconds)
-    http_results = {
-        target["name"]: probe_http_target(target, timeout_seconds)
-        for target in config["http"]["targets"]
-    }
+    http_results = {target["name"]: probe_http_target(target, timeout_seconds) for target in config["http"]["targets"]}
     egress = probe_egress(config["egress"], timeout_seconds)
     evidence = {
         "schema_version": SCHEMA_VERSION,

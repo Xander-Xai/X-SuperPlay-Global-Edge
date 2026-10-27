@@ -4,9 +4,9 @@ import {
   ApiTimeoutError,
   ApiUnavailableError,
   HttpEdgeApiClient,
-  UnsupportedApiVersionError,
   loadDashboardSnapshot,
   parsePrometheusMetrics,
+  UnsupportedApiVersionError,
 } from './edge-api-client'
 import { MockEdgeApiClient } from './mock-edge-api-client'
 import type { NodeConnectionResponse } from './types'
@@ -31,7 +31,11 @@ const nodeStatus = {
   corrupted_evidence_count: 0,
 }
 
-function jsonResponse(body: unknown, status = 200, contentType = 'application/json; charset=utf-8') {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  contentType = 'application/json; charset=utf-8',
+) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': contentType } })
 }
 
@@ -60,7 +64,11 @@ const nodeConnection = {
 
 const nodeCapabilities = { wireguard: true, xray_reality: true, hysteria2: false }
 
-const nodeMetadata = { node_id: 'edge-test', runtime_version: 'edge-runtime-state-v1', api_version: 'v1' }
+const nodeMetadata = {
+  node_id: 'edge-test',
+  runtime_version: 'edge-runtime-state-v1',
+  api_version: 'v1',
+}
 
 const healthCurrent = {
   node_status: 'healthy',
@@ -115,23 +123,31 @@ const perResourceRoutes: Record<string, unknown> = {
 
 function perResourceFetch(url: string): Response {
   if (url.endsWith('/metrics')) {
-    return new Response(metricsText, { status: 200, headers: { 'content-type': 'text/plain; version=0.0.4' } })
+    return new Response(metricsText, {
+      status: 200,
+      headers: { 'content-type': 'text/plain; version=0.0.4' },
+    })
   }
   const route = Object.keys(perResourceRoutes).find((candidate) => url.endsWith(candidate))
   return jsonResponse(perResourceRoutes[route as string])
 }
 
 describe('Edge API adapter', () => {
-  it.each(['healthy', 'warning', 'critical', 'unknown', 'events'] as const)('supports %s mock fixture', async (scenario) => {
-    const client = new MockEdgeApiClient(scenario)
-    const events = await client.getEvents()
-    const status = await client.getNodeStatus()
-    expect(status.node_id).toBe('edge-demo')
-    expect(Array.isArray(events.events)).toBe(true)
-  })
+  it.each(['healthy', 'warning', 'critical', 'unknown', 'events'] as const)(
+    'supports %s mock fixture',
+    async (scenario) => {
+      const client = new MockEdgeApiClient(scenario)
+      const events = await client.getEvents()
+      const status = await client.getNodeStatus()
+      expect(status.node_id).toBe('edge-demo')
+      expect(Array.isArray(events.events)).toBe(true)
+    },
+  )
 
   it('models unavailable backend without a network call', async () => {
-    await expect(new MockEdgeApiClient('unavailable').getNodeStatus()).rejects.toMatchObject({ kind: 'unavailable' })
+    await expect(new MockEdgeApiClient('unavailable').getNodeStatus()).rejects.toMatchObject({
+      kind: 'unavailable',
+    })
   })
 
   it('performs a successful bounded GET with JSON content type validation', async () => {
@@ -139,11 +155,15 @@ describe('Edge API adapter', () => {
     const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
     await expect(client.getNodeStatus()).resolves.toMatchObject({ node_id: 'edge-test' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'GET', headers: { Accept: 'application/json' } })
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
   })
 
   it('retries one transient transport failure, then succeeds', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockRejectedValueOnce(new TypeError('connection reset'))
       .mockResolvedValueOnce(jsonResponse(nodeStatus))
     const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
@@ -154,15 +174,28 @@ describe('Edge API adapter', () => {
   it('enforces the two-attempt transport retry limit', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'))
     const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
-    await expect(client.getNodeStatus()).rejects.toMatchObject({ kind: 'unavailable', category: 'transport' })
+    await expect(client.getNodeStatus()).rejects.toMatchObject({
+      kind: 'unavailable',
+      category: 'transport',
+    })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('cancels timed-out requests and makes only the bounded retry', async () => {
-    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
-    }))
-    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock as unknown as typeof fetch, timeoutMs: 5 })
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new DOMException('Aborted', 'AbortError')),
+            { once: true },
+          )
+        }),
+    )
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      timeoutMs: 5,
+    })
     await expect(client.getNodeStatus()).rejects.toBeInstanceOf(ApiTimeoutError)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
@@ -175,7 +208,8 @@ describe('Edge API adapter', () => {
   })
 
   it('retries a safe transient server response', async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(jsonResponse({ error: 'temporary' }, 503))
       .mockResolvedValueOnce(jsonResponse(nodeStatus))
     const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
@@ -184,22 +218,40 @@ describe('Edge API adapter', () => {
   })
 
   it('does not retry malformed payloads or content-type mismatches', async () => {
-    const malformed = vi.fn().mockResolvedValue(new Response('{bad', { status: 200, headers: { 'content-type': 'application/json' } }))
-    await expect(new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: malformed }).getNodeStatus()).rejects.toBeInstanceOf(ApiResponseError)
+    const malformed = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{bad', { status: 200, headers: { 'content-type': 'application/json' } }),
+      )
+    await expect(
+      new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: malformed }).getNodeStatus(),
+    ).rejects.toBeInstanceOf(ApiResponseError)
     expect(malformed).toHaveBeenCalledTimes(1)
 
     const wrongType = vi.fn().mockResolvedValue(jsonResponse(nodeStatus, 200, 'text/plain'))
-    await expect(new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: wrongType }).getNodeStatus()).rejects.toBeInstanceOf(ApiResponseError)
+    await expect(
+      new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: wrongType }).getNodeStatus(),
+    ).rejects.toBeInstanceOf(ApiResponseError)
     expect(wrongType).toHaveBeenCalledTimes(1)
   })
 
   it('rejects invalid counts without retry and distinguishes unsupported API major versions', async () => {
-    const invalid = vi.fn().mockResolvedValue(jsonResponse({ ...nodeStatus, corrupted_evidence_count: -1 }))
-    await expect(new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: invalid }).getNodeStatus()).rejects.toBeInstanceOf(ApiResponseError)
+    const invalid = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ ...nodeStatus, corrupted_evidence_count: -1 }))
+    await expect(
+      new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: invalid }).getNodeStatus(),
+    ).rejects.toBeInstanceOf(ApiResponseError)
     expect(invalid).toHaveBeenCalledTimes(1)
 
-    const metadata = vi.fn().mockResolvedValue(jsonResponse({ node_id: 'edge-test', runtime_version: 'runtime', api_version: 'v2' }))
-    await expect(new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: metadata }).getNodeMetadata()).rejects.toBeInstanceOf(UnsupportedApiVersionError)
+    const metadata = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ node_id: 'edge-test', runtime_version: 'runtime', api_version: 'v2' }),
+      )
+    await expect(
+      new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: metadata }).getNodeMetadata(),
+    ).rejects.toBeInstanceOf(UnsupportedApiVersionError)
     expect(metadata).toHaveBeenCalledTimes(1)
   })
 
@@ -216,8 +268,12 @@ describe('Edge API adapter', () => {
     expect(snapshot.connectionState).toBe('unknown')
 
     const additive = { ...nodeStatus, additive_field: { retained: true } }
-    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: vi.fn().mockResolvedValue(jsonResponse(additive)) })
-    await expect(client.getNodeStatus()).resolves.toMatchObject({ additive_field: { retained: true } })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(additive)),
+    })
+    await expect(client.getNodeStatus()).resolves.toMatchObject({
+      additive_field: { retained: true },
+    })
   })
 
   it('requires compatible Prometheus text and accepts NaN as unavailable', () => {
@@ -252,7 +308,9 @@ describe('Edge API adapter', () => {
       if (url.endsWith('/api/v1/node/snapshot')) return jsonResponse({ error: 'not_found' }, 404)
       return perResourceFetch(url)
     })
-    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock as unknown as typeof fetch })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
     const snapshot = await loadDashboardSnapshot(client)
     expect(snapshot.nodeId).toBe('edge-test')
     expect(snapshot.p95LatencyMs).toBe(120)
@@ -264,10 +322,14 @@ describe('Edge API adapter', () => {
       if (url.endsWith('/api/v1/node/snapshot')) return jsonResponse({ error: 'not_found' }, 404)
       return perResourceFetch(url)
     })
-    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock as unknown as typeof fetch })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
     await loadDashboardSnapshot(client)
     await loadDashboardSnapshot(client)
-    const aggregateCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/node/snapshot'))
+    const aggregateCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).endsWith('/api/v1/node/snapshot'),
+    )
     expect(aggregateCalls).toHaveLength(1)
   })
 })

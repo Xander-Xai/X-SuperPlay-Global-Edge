@@ -1,3 +1,18 @@
+import {
+  ApiCancelledError,
+  ApiResponseError,
+  ApiUnavailableError,
+  assertSupportedApiVersion,
+  DEFAULT_MAX_ATTEMPTS,
+  DEFAULT_TIMEOUT_MS,
+  OPTIONAL_MAX_ATTEMPTS,
+  OPTIONAL_TIMEOUT_MS,
+  observationFreshness,
+  type RequestBudget,
+  type RequestPolicyOptions,
+  requestWithPolicy,
+  validateContentType,
+} from './resilience'
 import type {
   AlertEvent,
   BackendStatus,
@@ -12,29 +27,13 @@ import type {
   NodeConnectionResponse,
   NodeIdentityResponse,
   NodeMetadataResponse,
-  NodeSnapshot,
   NodeServicesResponse,
+  NodeSnapshot,
   NodeStatusResponse,
   PrometheusMetrics,
   ServiceName,
   ServiceState,
 } from './types'
-import {
-  ApiCancelledError,
-  ApiResponseError,
-  ApiTimeoutError,
-  ApiUnavailableError,
-  DEFAULT_MAX_ATTEMPTS,
-  DEFAULT_TIMEOUT_MS,
-  OPTIONAL_MAX_ATTEMPTS,
-  OPTIONAL_TIMEOUT_MS,
-  assertSupportedApiVersion,
-  observationFreshness,
-  requestWithPolicy,
-  validateContentType,
-  type RequestBudget,
-  type RequestPolicyOptions,
-} from './resilience'
 
 export {
   ApiCancelledError,
@@ -61,7 +60,7 @@ function assertRecord(value: unknown, resource: string): asserts value is Record
   if (!isRecord(value)) throw new ApiResponseError(`${resource} response must be an object`)
 }
 
-type JsonValidator<T> = (value: Record<string, unknown>) => boolean
+type JsonValidator = (value: Record<string, unknown>) => boolean
 
 function isString(value: unknown): value is string {
   return typeof value === 'string'
@@ -104,91 +103,123 @@ function isBackendStatus(value: unknown): value is BackendStatus {
 }
 
 function isServiceState(value: unknown, expectedName?: ServiceName): value is ServiceState {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isNonEmptyString(value.name) &&
     (!expectedName || value.name === expectedName) &&
     isNonEmptyString(value.status) &&
     isNonEmptyString(value.reason) &&
     isNonEmptyString(value.source)
+  )
 }
 
 function isServiceMap(value: unknown): value is Record<ServiceName, ServiceState> {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isServiceState(value.wireguard, 'wireguard') &&
     isServiceState(value.xray_reality, 'xray_reality') &&
     isServiceState(value.hysteria2, 'hysteria2')
+  )
 }
 
 function isNodeStatusResponse(value: Record<string, unknown>): boolean {
-  return isNonEmptyString(value.node_id) &&
+  return (
+    isNonEmptyString(value.node_id) &&
     isBackendStatus(value.overall_status) &&
     isNullableScore(value.health_score) &&
     isServiceMap(value.service_states) &&
     isNullableString(value.timestamp) &&
     isNonNegativeInteger(value.corrupted_evidence_count)
+  )
 }
 
 function isNodeIdentityResponse(value: Record<string, unknown>): boolean {
-  return isNonEmptyString(value.node_id) && isNonEmptyString(value.region) &&
-    isNonEmptyString(value.provider) && isNonEmptyString(value.version)
+  return (
+    isNonEmptyString(value.node_id) &&
+    isNonEmptyString(value.region) &&
+    isNonEmptyString(value.provider) &&
+    isNonEmptyString(value.version)
+  )
 }
 
 function isNodeServicesResponse(value: Record<string, unknown>): boolean {
-  return isNonEmptyString(value.node_id) &&
+  return (
+    isNonEmptyString(value.node_id) &&
     isServiceMap(value.services) &&
     isNullableString(value.timestamp) &&
     isNonNegativeInteger(value.corrupted_evidence_count)
+  )
 }
 
 function isNodeConnectionResponse(value: Record<string, unknown>): boolean {
-  return isNonEmptyString(value.node_id) &&
+  return (
+    isNonEmptyString(value.node_id) &&
     isNonEmptyString(value.connection_state) &&
     isNonEmptyString(value.protocol) &&
     isRecord(value.endpoint_metadata) &&
     isNullableString(value.timestamp) &&
     isNonNegativeInteger(value.corrupted_evidence_count)
+  )
 }
 
 function isNodeCapabilitiesResponse(value: Record<string, unknown>): boolean {
-  return typeof value.wireguard === 'boolean' &&
+  return (
+    typeof value.wireguard === 'boolean' &&
     typeof value.xray_reality === 'boolean' &&
     typeof value.hysteria2 === 'boolean'
+  )
 }
 
 function isNodeMetadataResponse(value: Record<string, unknown>): boolean {
-  return isNonEmptyString(value.node_id) && isNonEmptyString(value.runtime_version) &&
+  return (
+    isNonEmptyString(value.node_id) &&
+    isNonEmptyString(value.runtime_version) &&
     isNonEmptyString(value.api_version)
+  )
 }
 
 function isHealthCurrentResponse(value: Record<string, unknown>): boolean {
-  return isBackendStatus(value.node_status) &&
+  return (
+    isBackendStatus(value.node_status) &&
     isNullableScore(value.health_score) &&
     isRecord(value.latest_metrics) &&
     isNullableString(value.timestamp) &&
     isNonNegativeInteger(value.corrupted_evidence_count)
+  )
 }
 
 function isHealthHistoryResponse(value: Record<string, unknown>): boolean {
-  return (value.availability === null || isRate(value.availability)) &&
+  return (
+    (value.availability === null || isRate(value.availability)) &&
     isRecord(value.latency_percentiles) &&
-    (value.latency_percentiles.p95 === null || isNonNegativeNumber(value.latency_percentiles.p95)) &&
+    (value.latency_percentiles.p95 === null ||
+      isNonNegativeNumber(value.latency_percentiles.p95)) &&
     isRecord(value.historical_summary)
+  )
 }
 
 function isAlertEvent(value: unknown): value is AlertEvent {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isString(value.timestamp) &&
     (value.level === 'WARNING' || value.level === 'CRITICAL' || value.level === 'NONE') &&
-    isString(value.reason) && isString(value.metric) &&
-    isNullableNumber(value.value) && isNullableNumber(value.threshold) &&
-    isString(value.source_evidence) && typeof value.resolved === 'boolean'
+    isString(value.reason) &&
+    isString(value.metric) &&
+    isNullableNumber(value.value) &&
+    isNullableNumber(value.threshold) &&
+    isString(value.source_evidence) &&
+    typeof value.resolved === 'boolean'
+  )
 }
 
 function isEventsResponse(value: Record<string, unknown>): boolean {
-  return Array.isArray(value.events) && value.events.every(isAlertEvent) &&
+  return (
+    Array.isArray(value.events) &&
+    value.events.every(isAlertEvent) &&
     (typeof value.resolved === 'boolean' || value.resolved === null) &&
     (value.timestamp === undefined || isNullableString(value.timestamp)) &&
     (value.error === undefined || isString(value.error))
+  )
 }
 
 function isNodeAggregateResponse(value: Record<string, unknown>): boolean {
@@ -201,21 +232,33 @@ function isNodeAggregateResponse(value: Record<string, unknown>): boolean {
   const healthCurrent = value.health_current
   const healthHistory = value.health_history
   const events = value.events
-  return isRecord(status) && isNodeStatusResponse(status) &&
-    isRecord(identity) && isNodeIdentityResponse(identity) &&
-    isRecord(services) && isNodeServicesResponse(services) &&
-    isRecord(connection) && isNodeConnectionResponse(connection) &&
-    isRecord(capabilities) && isNodeCapabilitiesResponse(capabilities) &&
-    isRecord(metadata) && isNodeMetadataResponse(metadata) &&
-    isRecord(healthCurrent) && isHealthCurrentResponse(healthCurrent) &&
-    isRecord(healthHistory) && isHealthHistoryResponse(healthHistory) &&
-    isRecord(events) && isEventsResponse(events) &&
+  return (
+    isRecord(status) &&
+    isNodeStatusResponse(status) &&
+    isRecord(identity) &&
+    isNodeIdentityResponse(identity) &&
+    isRecord(services) &&
+    isNodeServicesResponse(services) &&
+    isRecord(connection) &&
+    isNodeConnectionResponse(connection) &&
+    isRecord(capabilities) &&
+    isNodeCapabilitiesResponse(capabilities) &&
+    isRecord(metadata) &&
+    isNodeMetadataResponse(metadata) &&
+    isRecord(healthCurrent) &&
+    isHealthCurrentResponse(healthCurrent) &&
+    isRecord(healthHistory) &&
+    isHealthHistoryResponse(healthHistory) &&
+    isRecord(events) &&
+    isEventsResponse(events) &&
     isString(value.metrics_text)
+  )
 }
 
-function parseJson<T>(value: unknown, resource: string, validator?: JsonValidator<T>): T {
+function parseJson<T>(value: unknown, resource: string, validator?: JsonValidator): T {
   assertRecord(value, resource)
-  if (validator && !validator(value)) throw new ApiResponseError(`${resource} response failed schema validation`)
+  if (validator && !validator(value))
+    throw new ApiResponseError(`${resource} response failed schema validation`)
   return value as T
 }
 
@@ -223,7 +266,8 @@ export function parsePrometheusMetrics(text: string): PrometheusMetrics {
   const metrics: PrometheusMetrics = {}
   for (const line of text.split(/\r?\n/)) {
     if (!line || line.startsWith('#')) continue
-    const match = /^(x_superplay_[a-z0-9_]+) (NaN|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$/.exec(line)
+    const match =
+      /^(x_superplay_[a-z0-9_]+) (NaN|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$/.exec(line)
     if (!match) throw new ApiResponseError(`Malformed Prometheus sample: ${line}`)
     metrics[match[1]] = match[2] === 'NaN' ? Number.NaN : Number(match[2])
   }
@@ -262,14 +306,18 @@ export class HttpEdgeApiClient implements EdgeApiClient {
 
   private async requestJson<T>(
     path: string,
-    validator?: JsonValidator<T>,
+    validator?: JsonValidator,
     signal?: AbortSignal,
     budget?: RequestBudget,
   ): Promise<T> {
-    const response = await requestWithPolicy(`${this.baseUrl}${path}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    }, { ...this.policy, ...budget, signal })
+    const response = await requestWithPolicy(
+      `${this.baseUrl}${path}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      },
+      { ...this.policy, ...budget, signal },
+    )
     validateContentType(response, 'json', path)
     let payload: unknown
     try {
@@ -280,47 +328,101 @@ export class HttpEdgeApiClient implements EdgeApiClient {
     return parseJson<T>(payload, path, validator)
   }
 
-  private async requestText(path: string, signal?: AbortSignal, budget?: RequestBudget): Promise<string> {
-    const response = await requestWithPolicy(`${this.baseUrl}${path}`, {
-      method: 'GET',
-      headers: { Accept: 'text/plain; version=0.0.4' },
-    }, { ...this.policy, ...budget, signal })
+  private async requestText(
+    path: string,
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<string> {
+    const response = await requestWithPolicy(
+      `${this.baseUrl}${path}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'text/plain; version=0.0.4' },
+      },
+      { ...this.policy, ...budget, signal },
+    )
     validateContentType(response, 'text', path)
     return response.text()
   }
 
   getNodeStatus(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeStatusResponse> {
-    return this.requestJson<NodeStatusResponse>('/api/v1/node/status', isNodeStatusResponse, signal, budget)
+    return this.requestJson<NodeStatusResponse>(
+      '/api/v1/node/status',
+      isNodeStatusResponse,
+      signal,
+      budget,
+    )
   }
 
   getNodeIdentity(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeIdentityResponse> {
-    return this.requestJson<NodeIdentityResponse>('/api/v1/node/identity', isNodeIdentityResponse, signal, budget)
+    return this.requestJson<NodeIdentityResponse>(
+      '/api/v1/node/identity',
+      isNodeIdentityResponse,
+      signal,
+      budget,
+    )
   }
 
   getNodeServices(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeServicesResponse> {
-    return this.requestJson<NodeServicesResponse>('/api/v1/node/services', isNodeServicesResponse, signal, budget)
+    return this.requestJson<NodeServicesResponse>(
+      '/api/v1/node/services',
+      isNodeServicesResponse,
+      signal,
+      budget,
+    )
   }
 
   getNodeConnection(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeConnectionResponse> {
-    return this.requestJson<NodeConnectionResponse>('/api/v1/node/connection', isNodeConnectionResponse, signal, budget)
+    return this.requestJson<NodeConnectionResponse>(
+      '/api/v1/node/connection',
+      isNodeConnectionResponse,
+      signal,
+      budget,
+    )
   }
 
-  getNodeCapabilities(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeCapabilitiesResponse> {
-    return this.requestJson<NodeCapabilitiesResponse>('/api/v1/node/capabilities', isNodeCapabilitiesResponse, signal, budget)
+  getNodeCapabilities(
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<NodeCapabilitiesResponse> {
+    return this.requestJson<NodeCapabilitiesResponse>(
+      '/api/v1/node/capabilities',
+      isNodeCapabilitiesResponse,
+      signal,
+      budget,
+    )
   }
 
-  async getNodeMetadata(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeMetadataResponse> {
-    const metadata = await this.requestJson<NodeMetadataResponse>('/api/v1/node/metadata', isNodeMetadataResponse, signal, budget)
+  async getNodeMetadata(
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<NodeMetadataResponse> {
+    const metadata = await this.requestJson<NodeMetadataResponse>(
+      '/api/v1/node/metadata',
+      isNodeMetadataResponse,
+      signal,
+      budget,
+    )
     assertSupportedApiVersion(metadata.api_version)
     return metadata
   }
 
   getHealthCurrent(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthCurrentResponse> {
-    return this.requestJson<HealthCurrentResponse>('/api/v1/health/current', isHealthCurrentResponse, signal, budget)
+    return this.requestJson<HealthCurrentResponse>(
+      '/api/v1/health/current',
+      isHealthCurrentResponse,
+      signal,
+      budget,
+    )
   }
 
   getHealthHistory(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthHistoryResponse> {
-    return this.requestJson<HealthHistoryResponse>('/api/v1/health/history', isHealthHistoryResponse, signal, budget)
+    return this.requestJson<HealthHistoryResponse>(
+      '/api/v1/health/history',
+      isHealthHistoryResponse,
+      signal,
+      budget,
+    )
   }
 
   getEvents(signal?: AbortSignal, budget?: RequestBudget): Promise<EventsResponse> {
@@ -336,9 +438,16 @@ export class HttpEdgeApiClient implements EdgeApiClient {
    * this route; the negative result is remembered so the panel stops paying
    * for a request that can never succeed.
    */
-  async getNodeSnapshotAggregate(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeAggregateResponse> {
+  async getNodeSnapshotAggregate(
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<NodeAggregateResponse> {
     if (this.aggregateSupported === false) {
-      throw new ApiUnavailableError('Aggregate snapshot route is not served by this API version', 'http', 404)
+      throw new ApiUnavailableError(
+        'Aggregate snapshot route is not served by this API version',
+        'http',
+        404,
+      )
     }
     try {
       const aggregate = await this.requestJson<NodeAggregateResponse>(
@@ -363,7 +472,10 @@ function metricValue(metrics: PrometheusMetrics, name: string): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function statusFromPayload(overallStatus: BackendStatus, events: EventsResponse): DisplayHealthState {
+function statusFromPayload(
+  overallStatus: BackendStatus,
+  events: EventsResponse,
+): DisplayHealthState {
   const activeEvents = events.events.filter((event) => !event.resolved)
   if (activeEvents.some((event) => event.level === 'CRITICAL')) return 'critical'
   if (overallStatus === 'healthy') return activeEvents.length ? 'warning' : 'healthy'
@@ -474,11 +586,18 @@ function dashboardSnapshotFromAggregate(
     protocol: aggregate.connection.protocol,
     services: aggregate.services.services,
     p50LatencyMs: metricValue(metrics, 'x_superplay_latency_p50_ms'),
-    p95LatencyMs: metricValue(metrics, 'x_superplay_latency_p95_ms') ?? aggregate.health_history.latency_percentiles.p95,
-    httpSuccessRate: metricValue(metrics, 'x_superplay_http_success_rate') ?? aggregate.health_history.availability,
+    p95LatencyMs:
+      metricValue(metrics, 'x_superplay_latency_p95_ms') ??
+      aggregate.health_history.latency_percentiles.p95,
+    httpSuccessRate:
+      metricValue(metrics, 'x_superplay_http_success_rate') ??
+      aggregate.health_history.availability,
     alertCount: metricValue(metrics, 'x_superplay_alert_count') ?? aggregate.events.events.length,
     timestamp: sourceTimestamp,
-    corruptedEvidenceCount: Math.max(aggregate.status.corrupted_evidence_count, aggregate.health_current.corrupted_evidence_count),
+    corruptedEvidenceCount: Math.max(
+      aggregate.status.corrupted_evidence_count,
+      aggregate.health_current.corrupted_evidence_count,
+    ),
     freshness: freshness.freshness,
     sourceTimestamp,
     receivedAt: new Date(now).toISOString(),
@@ -510,8 +629,18 @@ export async function loadDashboardSnapshot(
     client.getHealthCurrent(options.signal, options.budget),
     client.getNodeMetadata(options.signal, options.budget),
   ])
-  const services = unwrap('services', await servicesRequest, () => fallbackServices(status), resourceErrors)
-  const connection = unwrap('connection', await connectionRequest, () => fallbackConnection(status), resourceErrors)
+  const services = unwrap(
+    'services',
+    await servicesRequest,
+    () => fallbackServices(status),
+    resourceErrors,
+  )
+  const connection = unwrap(
+    'connection',
+    await connectionRequest,
+    () => fallbackConnection(status),
+    resourceErrors,
+  )
   const history = unwrap('history', await historyRequest, fallbackHistory, resourceErrors)
   const events = unwrap('events', await eventsRequest, fallbackEvents, resourceErrors)
   const metrics = unwrap('metrics', await metricsRequest, fallbackMetrics, resourceErrors)
@@ -529,11 +658,15 @@ export async function loadDashboardSnapshot(
     protocol: connection.protocol,
     services: services.services,
     p50LatencyMs: metricValue(metrics, 'x_superplay_latency_p50_ms'),
-    p95LatencyMs: metricValue(metrics, 'x_superplay_latency_p95_ms') ?? history.latency_percentiles.p95,
+    p95LatencyMs:
+      metricValue(metrics, 'x_superplay_latency_p95_ms') ?? history.latency_percentiles.p95,
     httpSuccessRate: metricValue(metrics, 'x_superplay_http_success_rate') ?? history.availability,
     alertCount: metricValue(metrics, 'x_superplay_alert_count') ?? events.events.length,
     timestamp: sourceTimestamp,
-    corruptedEvidenceCount: Math.max(status.corrupted_evidence_count, current.corrupted_evidence_count),
+    corruptedEvidenceCount: Math.max(
+      status.corrupted_evidence_count,
+      current.corrupted_evidence_count,
+    ),
     freshness: freshness.freshness,
     sourceTimestamp,
     receivedAt: new Date(now).toISOString(),
@@ -545,18 +678,25 @@ export async function loadDashboardSnapshot(
   }
 }
 
-export function markDashboardSnapshotFailed(snapshot: DashboardSnapshot, error: unknown): DashboardSnapshot {
+export function markDashboardSnapshotFailed(
+  snapshot: DashboardSnapshot,
+  error: unknown,
+): DashboardSnapshot {
   const freshness = observationFreshness(snapshot.sourceTimestamp)
   const kind = error instanceof Error && 'kind' in error ? error.kind : undefined
   return {
     ...snapshot,
     freshness: snapshot.sourceTimestamp ? 'stale' : freshness.freshness,
-    clientState: kind === 'unsupported_api_version'
-      ? 'unsupported_api_version'
-      : error instanceof ApiResponseError ? 'malformed_response' : 'backend_unavailable',
-    lastErrorCategory: error instanceof Error && 'category' in error
-      ? error.category as DashboardSnapshot['lastErrorCategory']
-      : 'transport',
+    clientState:
+      kind === 'unsupported_api_version'
+        ? 'unsupported_api_version'
+        : error instanceof ApiResponseError
+          ? 'malformed_response'
+          : 'backend_unavailable',
+    lastErrorCategory:
+      error instanceof Error && 'category' in error
+        ? (error.category as DashboardSnapshot['lastErrorCategory'])
+        : 'transport',
   }
 }
 
@@ -590,7 +730,9 @@ export async function loadNodeSnapshot(
   }
 
   const resourceErrors: string[] = []
-  const capabilitiesRequest = settle(() => client.getNodeCapabilities(options.signal, OPTIONAL_BUDGET))
+  const capabilitiesRequest = settle(() =>
+    client.getNodeCapabilities(options.signal, OPTIONAL_BUDGET),
+  )
   const servicesRequest = settle(() => client.getNodeServices(options.signal, OPTIONAL_BUDGET))
   const connectionRequest = settle(() => client.getNodeConnection(options.signal, OPTIONAL_BUDGET))
   const [status, identity, metadata] = await Promise.all([
@@ -598,9 +740,24 @@ export async function loadNodeSnapshot(
     client.getNodeIdentity(options.signal, options.budget),
     client.getNodeMetadata(options.signal, options.budget),
   ])
-  const capabilities = unwrap('capabilities', await capabilitiesRequest, fallbackCapabilities, resourceErrors)
-  const services = unwrap('services', await servicesRequest, () => fallbackServices(status), resourceErrors)
-  const connection = unwrap('connection', await connectionRequest, () => fallbackConnection(status), resourceErrors)
+  const capabilities = unwrap(
+    'capabilities',
+    await capabilitiesRequest,
+    fallbackCapabilities,
+    resourceErrors,
+  )
+  const services = unwrap(
+    'services',
+    await servicesRequest,
+    () => fallbackServices(status),
+    resourceErrors,
+  )
+  const connection = unwrap(
+    'connection',
+    await connectionRequest,
+    () => fallbackConnection(status),
+    resourceErrors,
+  )
   const now = options.now ?? Date.now()
   const sourceTimestamp = status.timestamp
   const freshness = observationFreshness(sourceTimestamp, now)
@@ -621,17 +778,24 @@ export async function loadNodeSnapshot(
   }
 }
 
-export function markNodeSnapshotFailed(snapshot: Awaited<ReturnType<typeof loadNodeSnapshot>>, error: unknown) {
+export function markNodeSnapshotFailed(
+  snapshot: Awaited<ReturnType<typeof loadNodeSnapshot>>,
+  error: unknown,
+) {
   const kind = error instanceof Error && 'kind' in error ? error.kind : undefined
   return {
     ...snapshot,
-    freshness: snapshot.sourceTimestamp ? 'stale' as const : 'unavailable' as const,
-    clientState: kind === 'unsupported_api_version'
-      ? 'unsupported_api_version' as const
-      : error instanceof ApiResponseError ? 'malformed_response' as const : 'backend_unavailable' as const,
-    lastErrorCategory: error instanceof Error && 'category' in error
-      ? error.category as typeof snapshot.lastErrorCategory
-      : 'transport' as const,
+    freshness: snapshot.sourceTimestamp ? ('stale' as const) : ('unavailable' as const),
+    clientState:
+      kind === 'unsupported_api_version'
+        ? ('unsupported_api_version' as const)
+        : error instanceof ApiResponseError
+          ? ('malformed_response' as const)
+          : ('backend_unavailable' as const),
+    lastErrorCategory:
+      error instanceof Error && 'category' in error
+        ? (error.category as typeof snapshot.lastErrorCategory)
+        : ('transport' as const),
   }
 }
 

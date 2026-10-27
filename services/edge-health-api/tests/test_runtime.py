@@ -68,7 +68,11 @@ STATUS_SCHEMA = {
 SERVICE_SCHEMA = {
     "type": "object",
     "required": ["node_id", "services", "timestamp"],
-    "properties": {"node_id": {"type": "string"}, "services": {"type": "object"}, "timestamp": {"type": ["string", "null"]}},
+    "properties": {
+        "node_id": {"type": "string"},
+        "services": {"type": "object"},
+        "timestamp": {"type": ["string", "null"]},
+    },
 }
 
 CONNECTION_SCHEMA = {
