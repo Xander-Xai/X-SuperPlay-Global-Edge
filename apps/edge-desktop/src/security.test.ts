@@ -4,6 +4,7 @@ import controllerContract from '../controller/src/contract.rs?raw'
 import controllerController from '../controller/src/controller.rs?raw'
 import controllerLib from '../controller/src/lib.rs?raw'
 import controllerMain from '../controller/src/main.rs?raw'
+import controllerProvenance from '../controller/src/provenance.rs?raw'
 import controllerState from '../controller/src/state.rs?raw'
 import controllerSupervisor from '../controller/src/supervisor.rs?raw'
 import controllerTime from '../controller/src/time.rs?raw'
@@ -37,6 +38,7 @@ describe('desktop security boundary', () => {
       controllerController,
       controllerLib,
       controllerMain,
+      controllerProvenance,
       controllerState,
       controllerSupervisor,
       controllerTime,
