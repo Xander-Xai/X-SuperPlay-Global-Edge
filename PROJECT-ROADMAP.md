@@ -29,6 +29,8 @@ The release client must evolve from an observer into the normal entry point for
 establishing and supervising connectivity. Users should not need to launch a
 separate WireGuard application for the primary daily-use path.
 
+Tracked as [#36](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/36).
+
 ### P0 — runtime and control-plane architecture
 
 - [ ] Write an ADR for the local runtime architecture: `Desktop UI -> local
@@ -86,6 +88,8 @@ separate WireGuard application for the primary daily-use path.
 - [ ] Add tray controls for connect/disconnect and current connection state.
 - [ ] Ensure the UI remains usable when the managed core or privileged service
   is unavailable.
+- [ ] Expand local fixture coverage for transport failure modes
+  ([#35](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/35)).
 
 ## Milestone 0.3 — profiles, routing, and resilient failover
 
@@ -155,8 +159,10 @@ separate WireGuard application for the primary daily-use path.
 ## Reliability and acceptance gates
 
 - [ ] Complete a reproducible synthetic comparison for Reality, Hysteria2, and
-  WireGuard paths.
-- [ ] Complete time-based soak tests in an isolated environment.
+  WireGuard paths
+  ([#33](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/33)).
+- [ ] Complete time-based soak tests in an isolated environment
+  ([#34](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/34)).
 - [ ] Demonstrate that the released desktop client can establish a working
   connection without requiring the standalone WireGuard GUI for the selected
   primary path.

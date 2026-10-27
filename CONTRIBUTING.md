@@ -6,7 +6,7 @@ reviewable, and safe for a public repository.
 ## Development setup
 
 ```bash
-git clone https://github.com/yandexuanxuan/X-SuperPlay-Global-Edge.git
+git clone https://github.com/Xander-Xai/X-SuperPlay-Global-Edge.git
 cd X-SuperPlay-Global-Edge
 python -m pip install -r services/edge-health-api/requirements.txt \
   -r tools/edge-health-agent/requirements.txt

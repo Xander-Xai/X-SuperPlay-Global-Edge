@@ -73,3 +73,19 @@ Back up the current wg-easy state and the external G1 v2 runtime directory
 first. A failed canary is rolled back by stopping the additive project and
 restoring the previous external configs; the existing WireGuard stack is not
 reinstalled or overwritten.
+
+## Desktop release signing and updates
+
+The Windows desktop artifact is currently an unsigned NSIS installer published
+with `SHA256SUMS.txt`. It is not code-signed and has no automatic updater.
+
+- Signing requires a Windows code-signing certificate or an approved signing
+  service, its password stored in repository secrets, and `signtool` steps in
+  `edge-desktop-release.yml`.
+- Automatic updates require a Tauri updater signing key, a decided update
+  endpoint, and signed update manifests. Keep the updater disabled until that
+  path is reviewed.
+- Verify a signed installer on a clean Windows host, and document key rotation
+  and rollback before enabling updates.
+
+Tracked in https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/37.
