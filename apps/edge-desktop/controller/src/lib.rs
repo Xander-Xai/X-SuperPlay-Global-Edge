@@ -7,6 +7,7 @@
 pub mod authentication;
 pub mod contract;
 pub mod controller;
+pub mod provenance;
 pub mod state;
 pub mod supervisor;
 pub mod time;
@@ -18,6 +19,7 @@ pub use contract::{
     TransportState, TransportsResponse, CONTRACT_VERSION,
 };
 pub use controller::Controller;
+pub use provenance::{sha256_hex, ProvenanceError, ProvenanceManifest};
 pub use state::{StateMachine, TransitionError};
 pub use supervisor::{
     CoreError, CoreEvent, CoreHandle, FakeCore, RestartPolicy, Supervisor, SupervisorError,
