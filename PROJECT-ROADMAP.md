@@ -41,8 +41,9 @@ Tracked as [#36](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/36
   Hysteria2, and WireGuard components. Record protocol coverage, TUN/system
   proxy support, Windows behavior, upgrade model, binary size, and license
   implications before selecting a default.
-- [ ] Define a stable local controller API for connect, disconnect, status,
-  active transport, runtime version, and bounded diagnostics.
+- [x] Define a stable local controller API for connect, disconnect, status,
+  active transport, runtime version, and bounded diagnostics
+  ([contract](docs/client/reference/local-controller-api-contract.md)).
 - [ ] Add a runtime supervisor with start/stop/restart, readiness checks, crash
   detection, bounded restart policy, and clean shutdown.
 - [ ] Add runtime binary provenance and integrity verification before execution.
