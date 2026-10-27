@@ -3,7 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -83,7 +83,7 @@ class EvidenceStoreTests(unittest.TestCase):
             store = EvidenceStore(directory, max_days=7)
             old_path = store.write(evidence("2026-08-01T12:00:00.000Z"))
             fresh_path = store.write(evidence("2026-09-08T12:00:00.000Z"))
-            now = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+            now = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
             old_mtime = (now - timedelta(days=8)).timestamp()
             fresh_mtime = (now - timedelta(days=1)).timestamp()
             os.utime(old_path, (old_mtime, old_mtime))

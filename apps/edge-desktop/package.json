@@ -13,6 +13,8 @@
     "build": "tsc --noEmit && vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "lint": "biome ci .",
+    "format": "biome format --write .",
     "boundary": "python ../../scripts/ci/check-edge-desktop-boundary.py apps/edge-desktop"
   },
   "dependencies": {
@@ -21,6 +23,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@tauri-apps/cli": "^2.12.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.0",

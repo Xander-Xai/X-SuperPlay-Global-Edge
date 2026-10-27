@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  ClientApiState,
+  DashboardSnapshot,
+  EdgeApiClient,
+  EventsResponse,
+  NodeSnapshot,
+  RequestBudget,
+} from './api'
 import {
   ApiCancelledError,
   ApiResponseError,
-  ApiUnavailableError,
   classifyClientApiState,
   createEdgeApiClient,
-  errorCategory,
   loadDashboardSnapshot,
   loadNodeSnapshot,
   markDashboardSnapshotFailed,
@@ -14,7 +20,6 @@ import {
   POLL_MAX_ATTEMPTS,
   POLL_TIMEOUT_MS,
 } from './api'
-import type { ClientApiState, DashboardSnapshot, EdgeApiClient, EventsResponse, NodeSnapshot, RequestBudget } from './api'
 import { DashboardView } from './views/Dashboard'
 import { EventsView } from './views/Events'
 import { NodeView } from './views/Node'
@@ -26,13 +31,26 @@ const BUILD_SHA = typeof __BUILD_SHA__ === 'string' ? __BUILD_SHA__ : 'local'
 const BUILD_TARGET = typeof __BUILD_TARGET__ === 'string' ? __BUILD_TARGET__ : 'web'
 
 function LoadingState() {
-  return <div className="loading-state" role="status"><span className="spinner" />Loading evidence snapshot…</div>
+  return (
+    <div className="loading-state" role="status">
+      <span className="spinner" />
+      Loading evidence snapshot…
+    </div>
+  )
 }
 
-function errorPresentation(error: unknown): { state: ClientApiState; eyebrow: string; title: string } {
+function errorPresentation(error: unknown): {
+  state: ClientApiState
+  eyebrow: string
+  title: string
+} {
   const state = classifyClientApiState(error)
   if (state === 'unsupported_api_version') {
-    return { state, eyebrow: 'UNSUPPORTED API VERSION', title: 'Observation API version is not supported' }
+    return {
+      state,
+      eyebrow: 'UNSUPPORTED API VERSION',
+      title: 'Observation API version is not supported',
+    }
   }
   if (state === 'malformed_response') {
     return { state, eyebrow: 'MALFORMED RESPONSE', title: 'Evidence could not be interpreted' }
@@ -49,28 +67,47 @@ function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void })
       <p className="eyebrow">{presentation.eyebrow}</p>
       <h2>{presentation.title}</h2>
       <p>{message}</p>
-      <button className="secondary-button" onClick={onRetry}>Retry read-only request</button>
+      <button type="button" className="secondary-button" onClick={onRetry}>
+        Retry read-only request
+      </button>
     </div>
   )
 }
 
 function ObservationNotice({ snapshot }: { snapshot: DashboardSnapshot | NodeSnapshot }) {
-  if (snapshot.clientState === 'normal' && snapshot.freshness === 'fresh' && snapshot.resourceErrors.length === 0) return null
-  const errorText = snapshot.lastErrorCategory ? ` · latest request: ${snapshot.lastErrorCategory}` : ''
+  if (
+    snapshot.clientState === 'normal' &&
+    snapshot.freshness === 'fresh' &&
+    snapshot.resourceErrors.length === 0
+  )
+    return null
+  const errorText = snapshot.lastErrorCategory
+    ? ` · latest request: ${snapshot.lastErrorCategory}`
+    : ''
   return (
     <div className={`observation-notice freshness-${snapshot.freshness}`} role="status">
       <strong>Observation {snapshot.freshness.toUpperCase()}</strong>
       <span>
-        {snapshot.freshness === 'stale' ? 'Showing last-known-good state; it is not current/live.' : 'Current observation is unavailable.'}
+        {snapshot.freshness === 'stale'
+          ? 'Showing last-known-good state; it is not current/live.'
+          : 'Current observation is unavailable.'}
         {snapshot.sourceTimestamp ? ` Last observed ${snapshot.sourceTimestamp}.` : ''}
         {errorText}
       </span>
-      {snapshot.resourceErrors.length > 0 && <small>Optional resources unavailable: {snapshot.resourceErrors.join(', ')}</small>}
+      {snapshot.resourceErrors.length > 0 && (
+        <small>Optional resources unavailable: {snapshot.resourceErrors.join(', ')}</small>
+      )}
     </div>
   )
 }
 
-function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: EdgeApiClient; initialView?: View }) {
+function App({
+  client: suppliedClient,
+  initialView = 'dashboard',
+}: {
+  client?: EdgeApiClient
+  initialView?: View
+}) {
   const client = useMemo(() => suppliedClient ?? createEdgeApiClient(), [suppliedClient])
   const [view, setView] = useState<View>(initialView)
   const [loading, setLoading] = useState(true)
@@ -83,6 +120,8 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
   // poll never holds the cross-border link for the full default timeout.
   const pollTriggeredRef = useRef(false)
 
+  // refreshToken is a poll/refresh trigger, not a value read by the loader.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshToken intentionally re-runs the loader
   useEffect(() => {
     const controller = new AbortController()
     let cancelled = false
@@ -95,10 +134,11 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
     pollTriggeredRef.current = false
 
     const schedulePoll = () => {
-      if (!cancelled) pollTimer = setTimeout(() => {
-        pollTriggeredRef.current = true
-        setRefreshToken((value) => value + 1)
-      }, POLL_INTERVAL_MS)
+      if (!cancelled)
+        pollTimer = setTimeout(() => {
+          pollTriggeredRef.current = true
+          setRefreshToken((value) => value + 1)
+        }, POLL_INTERVAL_MS)
     }
 
     const load = async () => {
@@ -117,8 +157,12 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
       } catch (loadError) {
         if (cancelled || loadError instanceof ApiCancelledError) return
         setError(loadError)
-        if (view === 'dashboard') setDashboard((previous) => previous ? markDashboardSnapshotFailed(previous, loadError) : previous)
-        if (view === 'node') setNode((previous) => previous ? markNodeSnapshotFailed(previous, loadError) : previous)
+        if (view === 'dashboard')
+          setDashboard((previous) =>
+            previous ? markDashboardSnapshotFailed(previous, loadError) : previous,
+          )
+        if (view === 'node')
+          setNode((previous) => (previous ? markNodeSnapshotFailed(previous, loadError) : previous))
       } finally {
         if (!cancelled) {
           setLoading(false)
@@ -146,20 +190,36 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
       <aside className="side-rail">
         <div className="brand-lockup">
           <div className="brand-mark">X</div>
-          <div><strong>X-SuperPlay</strong><span>Global Edge</span></div>
+          <div>
+            <strong>X-SuperPlay</strong>
+            <span>Global Edge</span>
+          </div>
         </div>
-        <div className="mode-chip"><span className="mode-dot" />{mode}</div>
+        <div className="mode-chip">
+          <span className="mode-dot" />
+          {mode}
+        </div>
         <nav aria-label="Primary navigation">
           {(['dashboard', 'events', 'node'] as View[]).map((item) => (
-            <button className={`nav-button ${view === item ? 'nav-active' : ''}`} key={item} onClick={() => setView(item)} aria-current={view === item ? 'page' : undefined}>
-              <span className="nav-icon">{item === 'dashboard' ? '◈' : item === 'events' ? '!' : '◎'}</span>
+            <button
+              type="button"
+              className={`nav-button ${view === item ? 'nav-active' : ''}`}
+              key={item}
+              onClick={() => setView(item)}
+              aria-current={view === item ? 'page' : undefined}
+            >
+              <span className="nav-icon">
+                {item === 'dashboard' ? '◈' : item === 'events' ? '!' : '◎'}
+              </span>
               {item[0].toUpperCase() + item.slice(1)}
             </button>
           ))}
         </nav>
         <div className="rail-footer">
           <span>Read-only observation API</span>
-          <span>v{BUILD_VERSION} · {BUILD_TARGET}</span>
+          <span>
+            v{BUILD_VERSION} · {BUILD_TARGET}
+          </span>
           <span className="build-sha">{BUILD_SHA}</span>
         </div>
       </aside>
@@ -167,19 +227,44 @@ function App({ client: suppliedClient, initialView = 'dashboard' }: { client?: E
         <header className="topbar">
           <span>Edge observation</span>
           <div className="topbar-actions">
-            {loading && cachedView && <span className="refresh-indicator" role="status">Refreshing evidence…</span>}
-            <button className="refresh-button" onClick={retry} aria-label="Refresh evidence">
+            {loading && cachedView && (
+              <span className="refresh-indicator" role="status">
+                Refreshing evidence…
+              </span>
+            )}
+            <button
+              type="button"
+              className="refresh-button"
+              onClick={retry}
+              aria-label="Refresh evidence"
+            >
               {loading ? '↻ Refreshing…' : '↻ Refresh'}
             </button>
           </div>
         </header>
         <div className="content-wrap" aria-busy={loading}>
           {loading && !cachedView && <LoadingState />}
-          {!loading && error !== null && !cachedView && <ErrorState error={error} onRetry={retry} />}
-          {view === 'dashboard' && dashboard && <><ObservationNotice snapshot={dashboard} /><DashboardView snapshot={dashboard} /></>}
+          {!loading && error !== null && !cachedView && (
+            <ErrorState error={error} onRetry={retry} />
+          )}
+          {view === 'dashboard' && dashboard && (
+            <>
+              <ObservationNotice snapshot={dashboard} />
+              <DashboardView snapshot={dashboard} />
+            </>
+          )}
           {view === 'events' && events && <EventsView response={events} />}
-          {view === 'node' && node && <><ObservationNotice snapshot={node} /><NodeView snapshot={node} /></>}
-          {!loading && error !== null && cachedView && <div className="cached-retry"><ErrorState error={error} onRetry={retry} /></div>}
+          {view === 'node' && node && (
+            <>
+              <ObservationNotice snapshot={node} />
+              <NodeView snapshot={node} />
+            </>
+          )}
+          {!loading && error !== null && cachedView && (
+            <div className="cached-retry">
+              <ErrorState error={error} onRetry={retry} />
+            </div>
+          )}
         </div>
       </main>
     </div>

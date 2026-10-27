@@ -10,7 +10,6 @@ from routes.alerts import get_events
 from routes.health import get_history
 from routes.node import get_status
 
-
 METRIC_NAMES = (
     "x_superplay_health_score",
     "x_superplay_http_success_rate",

@@ -1,5 +1,5 @@
-import { formatServiceName } from '../api'
 import type { DashboardSnapshot, ServiceName } from '../api'
+import { formatServiceName } from '../api'
 import { MetricCard } from '../components/MetricCard'
 import { StatusBadge } from '../components/StatusBadge'
 
@@ -41,7 +41,9 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
         <div>
           <p className="eyebrow">{snapshot.nodeId}</p>
           <h2>{snapshot.region}</h2>
-          <p className="muted">{snapshot.provider} · {snapshot.protocol} · {snapshot.connectionState}</p>
+          <p className="muted">
+            {snapshot.provider} · {snapshot.protocol} · {snapshot.connectionState}
+          </p>
         </div>
         <div className="score-block">
           <span>Health score</span>
@@ -51,10 +53,18 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
       </div>
 
       <div className="metric-grid">
-        <MetricCard label="HTTP success" value={displayNumber(snapshot.httpSuccessRate, '%')} tone="good" />
+        <MetricCard
+          label="HTTP success"
+          value={displayNumber(snapshot.httpSuccessRate, '%')}
+          tone="good"
+        />
         <MetricCard label="P50 latency" value={displayNumber(snapshot.p50LatencyMs)} unit="ms" />
         <MetricCard label="P95 latency" value={displayNumber(snapshot.p95LatencyMs)} unit="ms" />
-        <MetricCard label="Active alerts" value={displayNumber(snapshot.alertCount)} tone={snapshot.alertCount ? 'warning' : 'neutral'} />
+        <MetricCard
+          label="Active alerts"
+          value={displayNumber(snapshot.alertCount)}
+          tone={snapshot.alertCount ? 'warning' : 'neutral'}
+        />
       </div>
 
       <div className="panel">
@@ -70,7 +80,9 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
             const service = snapshot.services[name]
             return (
               <div className="service-row" key={name}>
-                <div className="service-icon" aria-hidden="true">{name === 'wireguard' ? 'W' : name === 'xray_reality' ? 'R' : 'H'}</div>
+                <div className="service-icon" aria-hidden="true">
+                  {name === 'wireguard' ? 'W' : name === 'xray_reality' ? 'R' : 'H'}
+                </div>
                 <div>
                   <strong>{formatServiceName(name)}</strong>
                   <p>{service?.reason ?? 'No local evidence'}</p>
@@ -85,7 +97,8 @@ export function DashboardView({ snapshot }: { snapshot: DashboardSnapshot }) {
       </div>
 
       <p className="footnote">
-        Observed {snapshot.timestamp ?? 'time unavailable'} · data age {formatAge(snapshot.ageMs)} at last refresh · corrupted evidence: {snapshot.corruptedEvidenceCount}
+        Observed {snapshot.timestamp ?? 'time unavailable'} · data age {formatAge(snapshot.ageMs)}{' '}
+        at last refresh · corrupted evidence: {snapshot.corruptedEvidenceCount}
       </p>
     </section>
   )

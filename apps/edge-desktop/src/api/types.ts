@@ -1,12 +1,13 @@
 export type BackendStatus = 'healthy' | 'degraded' | 'unknown'
 export type { ClientApiState, ErrorCategory, ObservationFreshness } from './resilience'
-import type { ClientApiState, ErrorCategory, ObservationFreshness, RequestBudget } from './resilience'
-export type DisplayHealthState =
-  | 'healthy'
-  | 'warning'
-  | 'critical'
-  | 'unavailable'
-  | 'unknown'
+
+import type {
+  ClientApiState,
+  ErrorCategory,
+  ObservationFreshness,
+  RequestBudget,
+} from './resilience'
+export type DisplayHealthState = 'healthy' | 'warning' | 'critical' | 'unavailable' | 'unknown'
 
 export type ServiceName = 'wireguard' | 'xray_reality' | 'hysteria2'
 
@@ -102,7 +103,10 @@ export interface EdgeApiClient {
   getNodeIdentity(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeIdentityResponse>
   getNodeServices(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeServicesResponse>
   getNodeConnection(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeConnectionResponse>
-  getNodeCapabilities(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeCapabilitiesResponse>
+  getNodeCapabilities(
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<NodeCapabilitiesResponse>
   getNodeMetadata(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeMetadataResponse>
   getHealthCurrent(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthCurrentResponse>
   getHealthHistory(signal?: AbortSignal, budget?: RequestBudget): Promise<HealthHistoryResponse>
@@ -112,7 +116,10 @@ export interface EdgeApiClient {
    * Optional single-round-trip aggregate of every dashboard resource. Clients
    * that do not implement it keep using the per-resource endpoints.
    */
-  getNodeSnapshotAggregate?(signal?: AbortSignal, budget?: RequestBudget): Promise<NodeAggregateResponse>
+  getNodeSnapshotAggregate?(
+    signal?: AbortSignal,
+    budget?: RequestBudget,
+  ): Promise<NodeAggregateResponse>
 }
 
 /** One server response that carries every dashboard resource. */

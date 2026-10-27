@@ -14,8 +14,8 @@ sys.path.insert(0, str(SERVICE_ROOT))
 sys.path.insert(0, str(AGENT_ROOT))
 
 from alert.rules import write_alert
-from evidence.store import EvidenceStore
 from app import create_server
+from evidence.store import EvidenceStore
 
 
 def make_evidence(timestamp="2026-09-08T12:00:00.000Z", score=100.0):
@@ -154,7 +154,9 @@ class ApiTests(unittest.TestCase):
         self.assertFalse(payload["events"][0]["resolved"])
 
         resolved = dict(alert)
-        resolved.update({"level": "NONE", "reason": "no alert rule fired", "metric": "", "value": None, "threshold": None})
+        resolved.update(
+            {"level": "NONE", "reason": "no alert rule fired", "metric": "", "value": None, "threshold": None}
+        )
         write_alert(self.root / "alert.json", resolved)
         status, payload = self.get("/api/v1/events")
         self.assertEqual(status, 200)

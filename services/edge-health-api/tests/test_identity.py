@@ -17,7 +17,6 @@ sys.path.insert(0, str(AGENT_ROOT))
 from app import create_server
 from identity.provider import IdentityConfigError, NodeIdentityProvider
 
-
 IDENTITY_SCHEMA = {
     "type": "object",
     "required": ["node_id", "region", "provider", "version"],
@@ -36,7 +35,9 @@ METADATA_SCHEMA = {
     "type": "object",
     "required": ["node_id", "runtime_version", "api_version"],
     "additionalProperties": False,
-    "properties": {field: {"type": "string", "minLength": 1} for field in ("node_id", "runtime_version", "api_version")},
+    "properties": {
+        field: {"type": "string", "minLength": 1} for field in ("node_id", "runtime_version", "api_version")
+    },
 }
 
 
@@ -71,7 +72,9 @@ class IdentityTests(unittest.TestCase):
             provider = NodeIdentityProvider(path)
             self.assertEqual(provider.identity().to_dict()["node_id"], "node-test-01")
             self.assertEqual(provider.identity().to_dict()["region"], "test-region")
-            self.assertEqual(provider.capabilities().to_dict(), {"wireguard": True, "xray_reality": False, "hysteria2": True})
+            self.assertEqual(
+                provider.capabilities().to_dict(), {"wireguard": True, "xray_reality": False, "hysteria2": True}
+            )
             self.assertEqual(provider.metadata().to_dict()["runtime_version"], "runtime-test")
 
     def test_missing_config_is_rejected(self):
@@ -90,7 +93,10 @@ class IdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "node.yaml"
             write_config(path, capabilities=False)
-            self.assertEqual(NodeIdentityProvider(path).capabilities().to_dict(), {"wireguard": False, "xray_reality": False, "hysteria2": False})
+            self.assertEqual(
+                NodeIdentityProvider(path).capabilities().to_dict(),
+                {"wireguard": False, "xray_reality": False, "hysteria2": False},
+            )
 
     def test_identity_api_responses_match_schema_and_are_read_only(self):
         with tempfile.TemporaryDirectory() as directory:

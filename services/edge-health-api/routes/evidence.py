@@ -33,6 +33,8 @@ def current_health(repository: EvidenceRepository) -> dict[str, Any]:
         "timestamp": latest.get("timestamp"),
         "corrupted_evidence_count": corrupted,
     }
+
+
 def health_history(repository: EvidenceRepository) -> dict[str, Any]:
     summary = repository.summary()
     return {

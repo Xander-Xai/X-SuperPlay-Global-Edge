@@ -1,6 +1,5 @@
 import io
 import json
-import socket
 import sys
 import tempfile
 import unittest
@@ -49,11 +48,7 @@ def base_config():
     return {
         "timeout_seconds": 1.0,
         "tcp": {"host": "edge.example", "port": 443},
-        "http": {
-            "targets": [
-                {"name": "gstatic", "url": "https://gstatic.example/204", "expected_status": [204]}
-            ]
-        },
+        "http": {"targets": [{"name": "gstatic", "url": "https://gstatic.example/204", "expected_status": [204]}]},
         "egress": {
             "enabled": False,
             "url": "https://ip.example/",
@@ -76,7 +71,7 @@ class ProbeTests(unittest.TestCase):
         create.assert_called_once_with(("edge.example", 443), timeout=1.0)
 
     def test_tcp_timeout_is_classified_without_raising(self):
-        with patch.object(probe.socket, "create_connection", side_effect=socket.timeout("slow")):
+        with patch.object(probe.socket, "create_connection", side_effect=TimeoutError("slow")):
             result = probe.probe_tcp("edge.example", 443, 0.01)
         self.assertFalse(result["success"])
         self.assertIn("CONNECT_TIMEOUT", result["error"])
@@ -136,8 +131,9 @@ class ProbeTests(unittest.TestCase):
         tcp_connection.__enter__ = Mock(return_value=tcp_connection)
         tcp_connection.__exit__ = Mock(return_value=False)
         config = base_config()
-        with patch.object(probe.socket, "create_connection", return_value=tcp_connection), patch.object(
-            probe, "make_opener", return_value=FakeOpener(response=FakeResponse(status=204))
+        with (
+            patch.object(probe.socket, "create_connection", return_value=tcp_connection),
+            patch.object(probe, "make_opener", return_value=FakeOpener(response=FakeResponse(status=204))),
         ):
             evidence = probe.run_probe(config)
         probe.validate_evidence(evidence)
@@ -162,15 +158,19 @@ class ProbeTests(unittest.TestCase):
             tcp_connection = Mock()
             tcp_connection.__enter__ = Mock(return_value=tcp_connection)
             tcp_connection.__exit__ = Mock(return_value=False)
-            with patch.object(probe.socket, "create_connection", return_value=tcp_connection), patch.object(
-                probe, "make_opener", return_value=FakeOpener(response=FakeResponse(status=204))
+            with (
+                patch.object(probe.socket, "create_connection", return_value=tcp_connection),
+                patch.object(probe, "make_opener", return_value=FakeOpener(response=FakeResponse(status=204))),
             ):
                 generated = probe.run_probe(config)
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with patch.object(probe, "load_config", return_value=config), patch.object(
-                probe, "run_probe", return_value=generated
-            ), redirect_stdout(stdout), redirect_stderr(stderr):
+            with (
+                patch.object(probe, "load_config", return_value=config),
+                patch.object(probe, "run_probe", return_value=generated),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
                 result = probe.main(["--config", "ignored.yaml", "--output-evidence"])
             self.assertEqual(result, 0)
             self.assertTrue(list(Path(directory).glob("*/probe-*.json")))
@@ -205,7 +205,11 @@ class ProbeTests(unittest.TestCase):
             }
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with patch.object(probe, "load_config", return_value=config), redirect_stdout(stdout), redirect_stderr(stderr):
+            with (
+                patch.object(probe, "load_config", return_value=config),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
                 result = probe.main(["--evaluate-alert"])
             self.assertEqual(result, 0)
             self.assertEqual(json.loads(stdout.getvalue())["level"], "WARNING")

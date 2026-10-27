@@ -1,4 +1,9 @@
-export function MetricCard({ label, value, unit, tone = 'neutral' }: {
+export function MetricCard({
+  label,
+  value,
+  unit,
+  tone = 'neutral',
+}: {
   label: string
   value: string
   unit?: string
