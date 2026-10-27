@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ApiCancelledError,
   ApiResponseError,
   ApiTimeoutError,
   ApiUnavailableError,
@@ -181,6 +182,49 @@ describe('Edge API adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('treats a TLS identity failure as a bounded transport failure', async () => {
+    const tlsFailure = new TypeError('fetch failed', {
+      cause: { code: 'ERR_TLS_CERT_ALTNAME_INVALID' },
+    })
+    const fetchMock = vi.fn().mockRejectedValue(tlsFailure)
+    const client = new HttpEdgeApiClient('https://127.0.0.1:8443', { fetchImpl: fetchMock })
+    await expect(client.getNodeStatus()).rejects.toMatchObject({
+      kind: 'unavailable',
+      category: 'transport',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([401, 403])('does not retry an authentication rejection (%s)', async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: 'denied' }, status))
+    const client = new HttpEdgeApiClient('https://127.0.0.1:8443', { fetchImpl: fetchMock })
+    await expect(client.getNodeStatus()).rejects.toMatchObject({ kind: 'unavailable', status })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels an in-flight request without retrying', async () => {
+    const controller = new AbortController()
+    let calls = 0
+    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        )
+      })
+    })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+      timeoutMs: 5000,
+    })
+    const pending = client.getNodeStatus(controller.signal)
+    controller.abort()
+    await expect(pending).rejects.toBeInstanceOf(ApiCancelledError)
+    expect(calls).toBe(1)
+  })
+
   it('cancels timed-out requests and makes only the bounded retry', async () => {
     const fetchMock = vi.fn(
       (_url: RequestInfo | URL, init?: RequestInit) =>
@@ -233,6 +277,18 @@ describe('Edge API adapter', () => {
       new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: wrongType }).getNodeStatus(),
     ).rejects.toBeInstanceOf(ApiResponseError)
     expect(wrongType).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a truncated JSON body without retry', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"node_id":', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
+    await expect(client.getNodeStatus()).rejects.toBeInstanceOf(ApiResponseError)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('rejects invalid counts without retry and distinguishes unsupported API major versions', async () => {
@@ -290,6 +346,33 @@ describe('Edge API adapter', () => {
     const metrics = parsePrometheusMetrics(text)
     expect(Number.isNaN(metrics.x_superplay_health_score)).toBe(true)
     expect(metrics.x_superplay_alert_count).toBe(0)
+  })
+
+  it('keeps an aggregate snapshot usable when one optional resource is malformed', async () => {
+    const payload = { ...aggregatePayload, metrics_text: 'not-prometheus' }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload))
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', { fetchImpl: fetchMock })
+    const snapshot = await loadDashboardSnapshot(client)
+    expect(snapshot.clientState).toBe('normal')
+    expect(snapshot.resourceErrors).toContain('metrics:ApiResponseError')
+    expect(snapshot.p95LatencyMs).toBe(120)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to per-resource requests when the aggregate omits a required resource', async () => {
+    const partialAggregate = { ...aggregatePayload } as Record<string, unknown>
+    delete partialAggregate.connection
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/api/v1/node/snapshot')) return jsonResponse(partialAggregate)
+      return perResourceFetch(url)
+    })
+    const client = new HttpEdgeApiClient('http://127.0.0.1:8080', {
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    })
+    const snapshot = await loadDashboardSnapshot(client)
+    expect(snapshot.clientState).toBe('normal')
+    expect(snapshot.connectionState).toBe('connected')
+    expect(snapshot.resourceErrors).toEqual([])
   })
 
   it('serves the whole dashboard from one aggregate request when the API exposes it', async () => {
