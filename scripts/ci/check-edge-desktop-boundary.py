@@ -30,6 +30,7 @@ FORBIDDEN_FILES = {
 ALLOWED_PATHS = {
     "docs/client/monorepo-boundaries.md",
     "docs/client/client-architecture-prd.md",
+    "PROJECT-ROADMAP.md",
     "README.md",
     ".gitattributes",
     ".github/workflows/ci.yml",
