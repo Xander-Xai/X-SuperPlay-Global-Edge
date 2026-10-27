@@ -5,6 +5,7 @@ import controllerController from '../controller/src/controller.rs?raw'
 import controllerLib from '../controller/src/lib.rs?raw'
 import controllerMain from '../controller/src/main.rs?raw'
 import controllerState from '../controller/src/state.rs?raw'
+import controllerSupervisor from '../controller/src/supervisor.rs?raw'
 import controllerTime from '../controller/src/time.rs?raw'
 import tauriCapabilities from '../src-tauri/capabilities/default.json'
 import tauriSource from '../src-tauri/src/lib.rs?raw'
@@ -37,6 +38,7 @@ describe('desktop security boundary', () => {
       controllerLib,
       controllerMain,
       controllerState,
+      controllerSupervisor,
       controllerTime,
     ].join('\n')
     expect(source).not.toMatch(/Command::new|std::process::Command|powershell|cmd\.exe/i)
