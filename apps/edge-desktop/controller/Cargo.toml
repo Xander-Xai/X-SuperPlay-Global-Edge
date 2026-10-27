@@ -1,0 +1,21 @@
+[package]
+name = "x-superplay-edge-controller"
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+description = "Local controller contract skeleton for the X-SuperPlay Edge desktop client"
+publish = false
+
+[lib]
+name = "x_superplay_edge_controller"
+path = "src/lib.rs"
+
+[[bin]]
+name = "x-superplay-edge-controller"
+path = "src/main.rs"
+
+[dependencies]
+getrandom = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

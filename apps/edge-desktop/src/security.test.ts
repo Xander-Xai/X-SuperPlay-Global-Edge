@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import controllerAuth from '../controller/src/auth.rs?raw'
+import controllerContract from '../controller/src/contract.rs?raw'
+import controllerController from '../controller/src/controller.rs?raw'
+import controllerLib from '../controller/src/lib.rs?raw'
+import controllerMain from '../controller/src/main.rs?raw'
+import controllerState from '../controller/src/state.rs?raw'
+import controllerTime from '../controller/src/time.rs?raw'
 import tauriCapabilities from '../src-tauri/capabilities/default.json'
 import tauriSource from '../src-tauri/src/lib.rs?raw'
 import appSource from './App.tsx?raw'
@@ -20,5 +27,23 @@ describe('desktop security boundary', () => {
       /Command::new|std::process|powershell|cmd\.exe|WireGuard|Xray|route|firewall|registry/i,
     )
     expect(tauriCapabilities.permissions).toEqual([])
+  })
+
+  it('keeps the controller skeleton free of process and network control', () => {
+    const source = [
+      controllerAuth,
+      controllerContract,
+      controllerController,
+      controllerLib,
+      controllerMain,
+      controllerState,
+      controllerTime,
+    ].join('\n')
+    expect(source).not.toMatch(/Command::new|std::process::Command|powershell|cmd\.exe/i)
+    expect(source).not.toMatch(/https?:\/\//i)
+    expect(source).not.toMatch(/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/)
+    expect(source).not.toMatch(
+      /(?:private[_-]?key|api[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]/i,
+    )
   })
 })

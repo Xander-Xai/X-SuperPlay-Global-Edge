@@ -143,6 +143,16 @@ jobs:
           Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/src-tauri')
           cargo test --locked
 
+      - name: Controller contract tests
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location (Join-Path $env:GITHUB_WORKSPACE 'apps/edge-desktop/controller')
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
       - name: Build Tauri release NSIS installer
         shell: pwsh
         working-directory: .
