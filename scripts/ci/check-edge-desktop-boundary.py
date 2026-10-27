@@ -31,6 +31,7 @@ ALLOWED_PATHS = {
     "docs/client/monorepo-boundaries.md",
     "docs/client/client-architecture-prd.md",
     "README.md",
+    ".gitattributes",
     ".github/workflows/ci.yml",
     ".github/workflows/edge-desktop-ci.yml",
     ".github/workflows/edge-desktop-release.yml",
