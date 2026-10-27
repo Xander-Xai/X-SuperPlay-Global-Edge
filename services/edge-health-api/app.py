@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from identity.provider import IdentityConfigError, NodeIdentityProvider
+from metrics.prometheus import render_metrics
 from models import EvidenceRepository
 from routes.alerts import get_events
 from routes.health import get_current, get_history
@@ -23,7 +24,6 @@ from routes.node import (
     get_status,
 )
 from runtime.collector import RuntimeStateCollector
-from metrics.prometheus import render_metrics
 
 
 def _health_current(repository, _identity):
@@ -103,9 +103,7 @@ ROUTES = {
 }
 
 
-def make_handler(
-    repository: EvidenceRepository, identity_provider: NodeIdentityProvider | None = None
-):
+def make_handler(repository: EvidenceRepository, identity_provider: NodeIdentityProvider | None = None):
     if identity_provider is None:
         identity_provider = NodeIdentityProvider(Path(__file__).parent / "config" / "node.yaml")
 

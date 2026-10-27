@@ -1,0 +1,3 @@
+-r tools/edge-health-agent/requirements.txt
+-r services/edge-health-api/requirements.txt
+ruff==0.17.2

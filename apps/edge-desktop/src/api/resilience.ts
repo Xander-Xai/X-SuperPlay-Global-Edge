@@ -145,7 +145,10 @@ export async function requestWithPolicy(
   if (method !== 'GET') throw new ApiResponseError(`Read-only request policy rejected ${method}`)
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const maxAttempts = Math.min(DEFAULT_MAX_ATTEMPTS, Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS))
+  const maxAttempts = Math.min(
+    DEFAULT_MAX_ATTEMPTS,
+    Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS),
+  )
   const fetchImpl = options.fetchImpl ?? fetch
 
   if (options.signal?.aborted) throw new ApiCancelledError()
@@ -166,7 +169,12 @@ export async function requestWithPolicy(
       if (RETRYABLE_HTTP_STATUSES.has(response.status) && attempt < maxAttempts) {
         retry = true
       } else {
-        if (!response.ok) throw new ApiUnavailableError(`Read-only observation API returned HTTP ${response.status}`, 'http', response.status)
+        if (!response.ok)
+          throw new ApiUnavailableError(
+            `Read-only observation API returned HTTP ${response.status}`,
+            'http',
+            response.status,
+          )
         return response
       }
     } catch (error) {
@@ -181,7 +189,9 @@ export async function requestWithPolicy(
       } else if (attempt < maxAttempts && isRetryableTransport(error)) {
         retry = true
       } else {
-        throw new ApiUnavailableError(error instanceof Error ? error.message : 'Network request failed')
+        throw new ApiUnavailableError(
+          error instanceof Error ? error.message : 'Network request failed',
+        )
       }
     } finally {
       clearTimeout(timer)
@@ -194,12 +204,21 @@ export async function requestWithPolicy(
   throw new ApiUnavailableError('Read-only observation API request failed')
 }
 
-export function validateContentType(response: Response, expected: 'json' | 'text', resource: string): void {
-  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? ''
-  const valid = expected === 'json'
-    ? contentType === 'application/json' || contentType.endsWith('+json')
-    : contentType === 'text/plain'
-  if (!valid) throw new ApiResponseError(`${resource} returned incompatible Content-Type: ${contentType || 'missing'}`)
+export function validateContentType(
+  response: Response,
+  expected: 'json' | 'text',
+  resource: string,
+): void {
+  const contentType =
+    response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() ?? ''
+  const valid =
+    expected === 'json'
+      ? contentType === 'application/json' || contentType.endsWith('+json')
+      : contentType === 'text/plain'
+  if (!valid)
+    throw new ApiResponseError(
+      `${resource} returned incompatible Content-Type: ${contentType || 'missing'}`,
+    )
 }
 
 export function assertSupportedApiVersion(version: string): void {

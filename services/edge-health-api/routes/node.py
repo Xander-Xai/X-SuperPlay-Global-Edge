@@ -14,9 +14,7 @@ def _collector(repository: EvidenceRepository, identity_provider: NodeIdentityPr
     return RuntimeStateCollector(repository, node_id=node_id)
 
 
-def get_status(
-    repository: EvidenceRepository, identity_provider: NodeIdentityProvider | None = None
-) -> dict[str, Any]:
+def get_status(repository: EvidenceRepository, identity_provider: NodeIdentityProvider | None = None) -> dict[str, Any]:
     return _collector(repository, identity_provider).collect().status_payload()
 
 
