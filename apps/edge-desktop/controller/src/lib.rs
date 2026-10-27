@@ -8,6 +8,7 @@ pub mod authentication;
 pub mod contract;
 pub mod controller;
 pub mod state;
+pub mod supervisor;
 pub mod time;
 
 pub use authentication::{AuthCredential, Authenticator};
@@ -18,3 +19,7 @@ pub use contract::{
 };
 pub use controller::Controller;
 pub use state::{StateMachine, TransitionError};
+pub use supervisor::{
+    CoreError, CoreEvent, CoreHandle, FakeCore, RestartPolicy, Supervisor, SupervisorError,
+    SupervisorEvent,
+};
