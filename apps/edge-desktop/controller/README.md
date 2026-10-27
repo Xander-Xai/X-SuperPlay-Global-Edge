@@ -24,13 +24,12 @@ The binary reads one JSON request from standard input and prints one JSON
 response. It is a local contract harness, not the production IPC listener.
 
 ```bash
-printf '%s\n' '{"operation":"status"}' | \
-  CONTROLLER_TOKEN="$(printf 'ab%.0s' {1..32})" \
-  CONTROLLER_PROFILES=reality,hysteria2 \
-  cargo run --quiet
+CONTROLLER_CREDENTIAL="${CONTROLLER_CREDENTIAL:?set a 64-character hex credential}" \
+CONTROLLER_PROFILES=reality,hysteria2 \
+  cargo run --quiet <<< '{"operation":"status"}'
 ```
 
-The token is never printed, logged, or included in diagnostics.
+The credential is never printed, logged, or included in diagnostics.
 
 ## Checks
 

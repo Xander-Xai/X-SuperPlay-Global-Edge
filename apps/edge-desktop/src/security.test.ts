@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import controllerAuth from '../controller/src/auth.rs?raw'
+import controllerAuthentication from '../controller/src/authentication.rs?raw'
 import controllerContract from '../controller/src/contract.rs?raw'
 import controllerController from '../controller/src/controller.rs?raw'
 import controllerLib from '../controller/src/lib.rs?raw'
@@ -31,7 +31,7 @@ describe('desktop security boundary', () => {
 
   it('keeps the controller skeleton free of process and network control', () => {
     const source = [
-      controllerAuth,
+      controllerAuthentication,
       controllerContract,
       controllerController,
       controllerLib,

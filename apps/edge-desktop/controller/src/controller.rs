@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::auth::Authenticator;
+use crate::authentication::Authenticator;
 use crate::contract::{
     ConnectRequest, ConnectResponse, DiagnosticsResponse, DisconnectResponse, ErrorBody,
     ErrorCategory, Request, Response, ResponseBody, StatusResponse, TransportInfo, TransportState,
@@ -14,7 +14,7 @@ use crate::time::iso8601_now;
 const RECENT_LIMIT: usize = 20;
 
 pub struct Controller {
-    auth: Authenticator,
+    authenticator: Authenticator,
     state: StateMachine,
     active_transport: Option<String>,
     pending_profile: Option<String>,
@@ -28,20 +28,20 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(auth: Authenticator, profiles: impl IntoIterator<Item = String>) -> Self {
-        Self::with_fake_core(auth, profiles, true)
+    pub fn new(authenticator: Authenticator, profiles: impl IntoIterator<Item = String>) -> Self {
+        Self::with_fake_core(authenticator, profiles, true)
     }
 
     /// `fake_ready = false` leaves a connect attempt in `starting` until
     /// [`Controller::mark_ready`] is called. This exists to exercise the busy
     /// and readiness paths without a real core.
     pub fn with_fake_core(
-        auth: Authenticator,
+        authenticator: Authenticator,
         profiles: impl IntoIterator<Item = String>,
         fake_ready: bool,
     ) -> Self {
         Self {
-            auth,
+            authenticator,
             state: StateMachine::new(iso8601_now()),
             active_transport: None,
             pending_profile: None,
@@ -55,9 +55,9 @@ impl Controller {
         }
     }
 
-    pub fn handle(&mut self, request: Request, token: Option<&str>) -> Response {
+    pub fn handle(&mut self, request: Request, credential: Option<&str>) -> Response {
         self.requests += 1;
-        if let Err(error) = self.auth.authenticate(token) {
+        if let Err(error) = self.authenticator.authenticate(credential) {
             return self.error(error.to_error_body());
         }
         match request {
@@ -182,16 +182,16 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::AuthToken;
+    use crate::authentication::AuthCredential;
     use crate::contract::{ErrorCode, CONTRACT_VERSION};
 
-    fn token() -> String {
+    fn credential() -> String {
         "ab".repeat(32)
     }
 
     fn controller(fake_ready: bool) -> Controller {
         Controller::with_fake_core(
-            Authenticator::new(AuthToken::from_hex(token())),
+            Authenticator::new(AuthCredential::from_hex(credential())),
             ["reality".to_string(), "hysteria2".to_string()],
             fake_ready,
         )
@@ -223,7 +223,7 @@ mod tests {
         let mut controller = controller(true);
         let response = controller.handle(Request::Status, Some("wrong"));
         assert_eq!(error_body(&response).code, ErrorCode::Unauthorized);
-        let status = controller.handle(Request::Status, Some(&token()));
+        let status = controller.handle(Request::Status, Some(&credential()));
         match status.body {
             ResponseBody::Status(body) => assert_eq!(body.state, TransportState::Disabled),
             other => panic!("expected status, got {other:?}"),
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn status_is_available_from_the_start() {
         let mut controller = controller(true);
-        let response = controller.handle(Request::Status, Some(&token()));
+        let response = controller.handle(Request::Status, Some(&credential()));
         assert_eq!(response.contract_version, CONTRACT_VERSION);
         match response.body {
             ResponseBody::Status(body) => {
@@ -248,13 +248,13 @@ mod tests {
     #[test]
     fn connect_reaches_ready_and_is_idempotent() {
         let mut controller = controller(true);
-        let first = controller.handle(connect("reality", "op-1"), Some(&token()));
+        let first = controller.handle(connect("reality", "op-1"), Some(&credential()));
         assert_eq!(connect_state(&first), TransportState::Ready);
 
-        let second = controller.handle(connect("reality", "op-1"), Some(&token()));
+        let second = controller.handle(connect("reality", "op-1"), Some(&credential()));
         assert_eq!(first, second);
 
-        let diagnostics = controller.handle(Request::Diagnostics, Some(&token()));
+        let diagnostics = controller.handle(Request::Diagnostics, Some(&credential()));
         match diagnostics.body {
             ResponseBody::Diagnostics(body) => assert_eq!(body.state_transitions, 2),
             other => panic!("expected diagnostics, got {other:?}"),
@@ -264,21 +264,21 @@ mod tests {
     #[test]
     fn connect_rejects_unknown_profiles() {
         let mut controller = controller(true);
-        let response = controller.handle(connect("missing", "op-1"), Some(&token()));
+        let response = controller.handle(connect("missing", "op-1"), Some(&credential()));
         assert_eq!(error_body(&response).code, ErrorCode::NotFound);
     }
 
     #[test]
     fn connect_is_busy_until_the_core_reports_ready() {
         let mut controller = controller(false);
-        let first = controller.handle(connect("reality", "op-1"), Some(&token()));
+        let first = controller.handle(connect("reality", "op-1"), Some(&credential()));
         assert_eq!(connect_state(&first), TransportState::Starting);
 
-        let second = controller.handle(connect("reality", "op-2"), Some(&token()));
+        let second = controller.handle(connect("reality", "op-2"), Some(&credential()));
         assert_eq!(error_body(&second).code, ErrorCode::Busy);
 
         controller.mark_ready().unwrap();
-        let status = controller.handle(Request::Status, Some(&token()));
+        let status = controller.handle(Request::Status, Some(&credential()));
         match status.body {
             ResponseBody::Status(body) => {
                 assert_eq!(body.state, TransportState::Ready);
@@ -291,18 +291,18 @@ mod tests {
     #[test]
     fn connect_conflicts_when_already_connected() {
         let mut controller = controller(true);
-        controller.handle(connect("reality", "op-1"), Some(&token()));
-        let response = controller.handle(connect("hysteria2", "op-2"), Some(&token()));
+        controller.handle(connect("reality", "op-1"), Some(&credential()));
+        let response = controller.handle(connect("hysteria2", "op-2"), Some(&credential()));
         assert_eq!(error_body(&response).code, ErrorCode::Conflict);
     }
 
     #[test]
     fn disconnect_is_idempotent_and_clears_the_active_transport() {
         let mut controller = controller(true);
-        controller.handle(connect("reality", "op-1"), Some(&token()));
+        controller.handle(connect("reality", "op-1"), Some(&credential()));
 
         for _ in 0..2 {
-            let response = controller.handle(Request::Disconnect, Some(&token()));
+            let response = controller.handle(Request::Disconnect, Some(&credential()));
             match response.body {
                 ResponseBody::Disconnect(body) => {
                     assert_eq!(body.state, TransportState::Stopped)
@@ -311,7 +311,7 @@ mod tests {
             }
         }
 
-        let status = controller.handle(Request::Status, Some(&token()));
+        let status = controller.handle(Request::Status, Some(&credential()));
         match status.body {
             ResponseBody::Status(body) => {
                 assert_eq!(body.state, TransportState::Stopped);
@@ -324,8 +324,8 @@ mod tests {
     #[test]
     fn transports_reflect_the_active_transport_only() {
         let mut controller = controller(true);
-        controller.handle(connect("reality", "op-1"), Some(&token()));
-        let response = controller.handle(Request::Transports, Some(&token()));
+        controller.handle(connect("reality", "op-1"), Some(&credential()));
+        let response = controller.handle(Request::Transports, Some(&credential()));
         match response.body {
             ResponseBody::Transports(body) => {
                 let reality = body
@@ -346,12 +346,12 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_do_not_contain_the_token() {
+    fn diagnostics_do_not_contain_the_credential() {
         let mut controller = controller(true);
-        controller.handle(connect("reality", "op-1"), Some(&token()));
-        let response = controller.handle(Request::Diagnostics, Some(&token()));
+        controller.handle(connect("reality", "op-1"), Some(&credential()));
+        let response = controller.handle(Request::Diagnostics, Some(&credential()));
         let serialized = serde_json::to_string(&response).unwrap();
-        assert!(!serialized.contains(&token()));
+        assert!(!serialized.contains(&credential()));
         assert!(!serialized.contains("profile_id"));
     }
 

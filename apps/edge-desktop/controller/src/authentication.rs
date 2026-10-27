@@ -21,9 +21,9 @@ impl AuthError {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct AuthToken(String);
+pub struct AuthCredential(String);
 
-impl AuthToken {
+impl AuthCredential {
     /// Generates 32 random bytes and stores them as lowercase hex.
     pub fn generate() -> Result<Self, AuthError> {
         let mut bytes = [0u8; 32];
@@ -44,24 +44,26 @@ impl AuthToken {
     }
 }
 
-impl std::fmt::Debug for AuthToken {
+impl std::fmt::Debug for AuthCredential {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("AuthToken([redacted])")
+        formatter.write_str("AuthCredential([redacted])")
     }
 }
 
 pub struct Authenticator {
-    token: AuthToken,
+    credential: AuthCredential,
 }
 
 impl Authenticator {
-    pub fn new(token: AuthToken) -> Self {
-        Self { token }
+    pub fn new(credential: AuthCredential) -> Self {
+        Self { credential }
     }
 
     pub fn authenticate(&self, presented: Option<&str>) -> Result<(), AuthError> {
         match presented {
-            Some(value) if constant_time_eq(value.as_bytes(), self.token.as_str().as_bytes()) => {
+            Some(value)
+                if constant_time_eq(value.as_bytes(), self.credential.as_str().as_bytes()) =>
+            {
                 Ok(())
             }
             _ => Err(AuthError::Unauthorized),
@@ -85,19 +87,21 @@ pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    fn token() -> AuthToken {
-        AuthToken::from_hex("ab".repeat(32))
+    fn credential() -> AuthCredential {
+        AuthCredential::from_hex("ab".repeat(32))
     }
 
     #[test]
     fn accepts_the_exact_token() {
-        let authenticator = Authenticator::new(token());
-        assert!(authenticator.authenticate(Some(token().as_str())).is_ok());
+        let authenticator = Authenticator::new(credential());
+        assert!(authenticator
+            .authenticate(Some(credential().as_str()))
+            .is_ok());
     }
 
     #[test]
     fn rejects_wrong_missing_and_empty_tokens() {
-        let authenticator = Authenticator::new(token());
+        let authenticator = Authenticator::new(credential());
         assert_eq!(
             authenticator.authenticate(Some("00")),
             Err(AuthError::Unauthorized)
@@ -121,12 +125,12 @@ mod tests {
 
     #[test]
     fn generated_tokens_are_hex_and_redacted_in_debug() {
-        let generated = AuthToken::generate().unwrap();
+        let generated = AuthCredential::generate().unwrap();
         assert_eq!(generated.as_str().len(), 64);
         assert!(generated
             .as_str()
             .chars()
             .all(|value| value.is_ascii_hexdigit()));
-        assert_eq!(format!("{generated:?}"), "AuthToken([redacted])");
+        assert_eq!(format!("{generated:?}"), "AuthCredential([redacted])");
     }
 }

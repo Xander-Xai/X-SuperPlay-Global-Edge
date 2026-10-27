@@ -4,13 +4,13 @@
 //! idempotency, and diagnostics over an in-process fake core. It does not
 //! start a network listener, spawn a process, or touch host network state.
 
-pub mod auth;
+pub mod authentication;
 pub mod contract;
 pub mod controller;
 pub mod state;
 pub mod time;
 
-pub use auth::{AuthToken, Authenticator};
+pub use authentication::{AuthCredential, Authenticator};
 pub use contract::{
     ConnectRequest, ConnectResponse, DiagnosticsResponse, DisconnectResponse, ErrorBody,
     ErrorCategory, ErrorCode, Request, Response, ResponseBody, StatusResponse, TransportInfo,
