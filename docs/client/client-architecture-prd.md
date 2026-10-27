@@ -196,6 +196,10 @@ future client could compare nodes or request an operator-approved action, but
 node selection, failover, write authorization, and recovery remain separate
 designs. No multi-node deployment or automatic recovery is part of P13-001.
 
+The milestone 0.2 connection-capable architecture is proposed separately in
+[ADR-0001](reference/adr-0001-local-runtime-architecture.md). It does not change
+the read-only P13-001 contract.
+
 ## 11. Acceptance boundary
 
 P13-001 is complete when the three documents in `docs/client/` define a
