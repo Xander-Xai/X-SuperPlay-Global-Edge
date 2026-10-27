@@ -2,11 +2,14 @@
 
 **Status:** milestone 0.2 contract skeleton. It implements the contract types,
 token authentication, the transport state machine, idempotency, diagnostics,
-and a fake in-process core.
+and a fake in-process core. It also includes a deterministic supervisor over
+that fake core: readiness deadline, crash detection, bounded restarts,
+cooldown, and clean stop.
 
 It deliberately does **not**:
 
-- start a transport core or a supervisor;
+- start a real transport core or process; the supervisor drives a fake
+  in-process core;
 - open a named pipe or TCP listener;
 - spawn a process;
 - touch proxy, route, DNS, or TUN state;
