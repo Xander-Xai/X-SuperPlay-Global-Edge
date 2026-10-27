@@ -6,6 +6,10 @@ and a fake in-process core. It also includes a deterministic supervisor over
 that fake core: readiness deadline, crash detection, bounded restarts,
 cooldown, and clean stop.
 
+Provenance verification accepts caller-supplied bytes and a reviewed
+manifest (name, version, SHA-256, source, license). It never reads or executes
+the runtime binary.
+
 It deliberately does **not**:
 
 - start a real transport core or process; the supervisor drives a fake
