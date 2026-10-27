@@ -33,8 +33,9 @@ Tracked as [#36](https://github.com/Xander-Xai/X-SuperPlay-Global-Edge/issues/36
 
 ### P0 — runtime and control-plane architecture
 
-- [ ] Write an ADR for the local runtime architecture: `Desktop UI -> local
-  controller -> managed network core -> system network`.
+- [x] Write an ADR for the local runtime architecture: `Desktop UI -> local
+  controller -> managed network core -> system network`
+  ([ADR-0001](docs/client/reference/adr-0001-local-runtime-architecture.md)).
 - [ ] Evaluate the network-core strategy with a reproducible spike. Compare a
   managed multi-protocol core candidate with directly supervising Xray,
   Hysteria2, and WireGuard components. Record protocol coverage, TUN/system
