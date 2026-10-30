@@ -74,3 +74,14 @@ specialized private experiments.
 
 The project is MIT-licensed. See `LICENSE` and
 `docs/client/reference/provenance.md` for third-party clean-room provenance.
+
+
+## Portfolio responsibility boundary (2026-10-30)
+
+This public note defines technical responsibilities only. Any private portfolio registry or business operation remains outside this repository; there is no claim that other privately managed systems are accessible, commercialized, or operational.
+
+- **Owns:** self-hosted networking and edge health/diagnostic reference implementation.
+- **Outputs:** isolated reproducible deployment examples, probes and recovery evidence.
+- **Does not own:** not a production networking service, authorized commercial VPN service, AI application runtime, or cross-project business decision maker.
+- **Public interfaces and handoff:** [Agent Control Plane](https://github.com/Xander-Xai/X-SuperPlay-Agent-Control-Plane) handles coding-agent task control; this repository does not orchestrate agent workers.
+- Technical implementation, testing and release evidence stay in this repository. An upstream portfolio document cannot promote draft, local tests or CI into real production usage, payment or user traction.
